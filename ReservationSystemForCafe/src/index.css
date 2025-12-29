@@ -215,6 +215,73 @@ body {
   font-weight: 700;
 }
 
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 12px;
+}
+
+.overviewGrid {
+  display: grid;
+  grid-template-columns: 1fr 420px;
+  gap: 16px;
+}
+
+.overviewGrid2 {
+  display: grid;
+  grid-template-columns: 1fr 420px;
+  gap: 16px;
+}
+
+.split {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.bigNumber {
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin-top: 6px;
+  margin-bottom: 2px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  font-size: 12px;
+  color: #111827;
+  white-space: nowrap;
+}
+
+.badge--neutral {
+  background: #f9fafb;
+}
+
+.badge--success {
+  border-color: #bbf7d0;
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+.miniCard {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.miniCard__title {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
 .error {
   color: #b91c1c;
 }
@@ -263,58 +330,12 @@ body {
   .formGrid {
     grid-template-columns: 1fr;
   }
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
-
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
+  .overviewGrid {
+    grid-template-columns: 1fr;
   }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
+  .overviewGrid2 {
+    grid-template-columns: 1fr;
   }
 }
+
+

@@ -22,6 +22,7 @@ export default function DashboardLayout() {
         <div className="sidebarCard">
           <div className="sidebarCard__title">Dashboard</div>
           <div className="sidebarCard__nav">
+            <SideItem to="/dashboard/overview" label="Overview" />
             <SideItem to="/dashboard/profile" label="Profile" />
             <SideItem to="/dashboard/floor" label="Floor" />
             <SideItem to="/dashboard/chat" label="Chat" />
