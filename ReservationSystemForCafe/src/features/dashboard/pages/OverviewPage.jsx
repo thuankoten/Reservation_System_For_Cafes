@@ -170,15 +170,7 @@ export default function OverviewPage() {
             </div>
           ) : !user ? (
             <div style={{ marginTop: 12 }}>
-              <div className="muted">Login to see and manage your reservation.</div>
-              <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                <Link className="btn btn--primary" to="/auth/login">
-                  Login
-                </Link>
-                <Link className="btn" to="/auth/signup">
-                  Sign-up
-                </Link>
-              </div>
+              <div className="muted">Browsing as guest.</div>
             </div>
           ) : !reservationSummary ? (
             <div style={{ marginTop: 12 }}>

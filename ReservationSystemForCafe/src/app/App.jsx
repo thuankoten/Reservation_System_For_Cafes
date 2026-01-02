@@ -8,6 +8,8 @@ import ProfilePage from '../features/dashboard/pages/ProfilePage.jsx'
 import FloorPage from '../features/dashboard/pages/FloorPage.jsx'
 import ChatPage from '../features/dashboard/pages/ChatPage.jsx'
 import ReservationPage from '../features/dashboard/pages/ReservationPage.jsx'
+import MenuPage from '../features/dashboard/pages/MenuPage.jsx'
+import ReportPage from '../features/dashboard/pages/ReportPage.jsx'
 
 export default function App() {
   return (
@@ -26,9 +28,16 @@ export default function App() {
         >
           <Route path="overview" element={<OverviewPage />} />
           <Route path="profile" element={<ProfilePage />} />
-          <Route path="floor" element={<FloorPage />} />
+
+          <Route path="tables" element={<FloorPage />} />
+          <Route path="reservations" element={<ReservationPage />} />
+          <Route path="menu" element={<MenuPage />} />
           <Route path="chat" element={<ChatPage />} />
-          <Route path="reservation" element={<ReservationPage />} />
+
+          <Route path="report" element={<ReportPage />} />
+
+          <Route path="floor" element={<Navigate to="/dashboard/tables" replace />} />
+          <Route path="reservation" element={<Navigate to="/dashboard/reservations" replace />} />
           <Route index element={<Navigate to="overview" replace />} />
         </Route>
 

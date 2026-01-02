@@ -12,7 +12,6 @@ import {
 } from 'firebase/firestore'
 import { db } from '../../../shared/firebase'
 import { useAuth } from '../../auth/AuthContext.jsx'
-import { Link } from 'react-router-dom'
 
 function toISODateTimeLocalValue(date) {
   const pad = (n) => String(n).padStart(2, '0')
@@ -33,7 +32,6 @@ export default function ReservationPage() {
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    if (!user) return
     const qTables = query(collection(db, 'tables'), orderBy('number', 'asc'))
     const unsub = onSnapshot(
       qTables,
@@ -69,25 +67,6 @@ export default function ReservationPage() {
     return () => unsub()
   }, [user?.uid])
 
-  if (!user) {
-    return (
-      <div className="card">
-        <h2 className="pageTitle">Reservation</h2>
-        <div className="muted" style={{ marginTop: 6 }}>
-          Please login to create and manage reservations.
-        </div>
-        <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <Link className="btn btn--primary" to="/auth/login">
-            Login
-          </Link>
-          <Link className="btn" to="/auth/signup">
-            Sign-up
-          </Link>
-        </div>
-      </div>
-    )
-  }
-
   const availableTables = useMemo(
     () => tables.filter((t) => (t.status || 'available') === 'available'),
     [tables]
@@ -100,7 +79,7 @@ export default function ReservationPage() {
       return
     }
     if (!user?.uid) {
-      setError('Not authenticated')
+      setError('Please sign in to create a reservation')
       return
     }
 
@@ -154,10 +133,21 @@ export default function ReservationPage() {
         <h2 className="pageTitle">Reservation</h2>
         <div className="muted">Create and manage your reservations (realtime)</div>
 
+        {!user ? (
+          <div className="muted" style={{ marginTop: 10 }}>
+            Browsing as guest. You can view availability, but reservation actions are disabled.
+          </div>
+        ) : null}
+
         <div className="formGrid" style={{ marginTop: 12 }}>
           <label className="field">
             <div className="field__label">Table</div>
-            <select value={selectedTableId} onChange={(e) => setSelectedTableId(e.target.value)} className="input">
+            <select
+              value={selectedTableId}
+              onChange={(e) => setSelectedTableId(e.target.value)}
+              className="input"
+              disabled={!user}
+            >
               <option value="" disabled>
                 Select a table
               </option>
@@ -171,16 +161,29 @@ export default function ReservationPage() {
 
           <label className="field">
             <div className="field__label">Party size</div>
-            <input value={partySize} onChange={(e) => setPartySize(e.target.value)} type="number" min={1} className="input" />
+            <input
+              value={partySize}
+              onChange={(e) => setPartySize(e.target.value)}
+              type="number"
+              min={1}
+              className="input"
+              disabled={!user}
+            />
           </label>
 
           <label className="field">
             <div className="field__label">Time</div>
-            <input value={startTimeLocal} onChange={(e) => setStartTimeLocal(e.target.value)} type="datetime-local" className="input" />
+            <input
+              value={startTimeLocal}
+              onChange={(e) => setStartTimeLocal(e.target.value)}
+              type="datetime-local"
+              className="input"
+              disabled={!user}
+            />
           </label>
 
           <div className="field" style={{ alignSelf: 'end' }}>
-            <button disabled={submitting} onClick={createReservation} className="btn btn--primary">
+            <button disabled={submitting || !user} onClick={createReservation} className="btn btn--primary">
               {submitting ? 'Creating...' : 'Reserve'}
             </button>
           </div>
@@ -192,7 +195,8 @@ export default function ReservationPage() {
       <div className="card">
         <h3 style={{ marginTop: 0 }}>My reservations</h3>
         <div className="stack">
-          {myReservations.length === 0 ? <div className="muted">No reservations yet.</div> : null}
+          {!user ? <div className="muted">Sign in to see your reservations.</div> : null}
+          {user && myReservations.length === 0 ? <div className="muted">No reservations yet.</div> : null}
           {myReservations.map((r) => (
             <div key={r.id} className="rowCard">
               <div>

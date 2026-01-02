@@ -4,7 +4,7 @@ function SideItem({ to, label }) {
   return (
     <NavLink
       to={to}
-      className={({ isActive }) => `sideItem ${isActive ? 'sideItem--active' : ''}`}
+      className={({ isActive }) => `sideItem sideItem--left ${isActive ? 'sideItem--active' : ''}`}
     >
       {label}
     </NavLink>
@@ -13,23 +13,30 @@ function SideItem({ to, label }) {
 
 export default function DashboardLayout() {
   return (
-    <div className="dashboard">
-      <section className="dashboard__content">
-        <Outlet />
-      </section>
+    <div className="dashboardShell">
+      <aside className="leftSidebar">
+        <div className="leftSidebar__brand">
+          <div className="leftSidebar__logo" />
+          <div className="leftSidebar__name">CAFÉ</div>
+        </div>
 
-      <aside className="dashboard__sidebar">
-        <div className="sidebarCard">
-          <div className="sidebarCard__title">Dashboard</div>
-          <div className="sidebarCard__nav">
-            <SideItem to="/dashboard/overview" label="Overview" />
-            <SideItem to="/dashboard/profile" label="Profile" />
-            <SideItem to="/dashboard/floor" label="Floor" />
-            <SideItem to="/dashboard/chat" label="Chat" />
-            <SideItem to="/dashboard/reservation" label="Reservation" />
-          </div>
+        <nav className="leftSidebar__nav">
+          <SideItem to="/dashboard/overview" label="Overview" />
+          <SideItem to="/dashboard/tables" label="Tables" />
+          <SideItem to="/dashboard/reservations" label="Reservations" />
+          <SideItem to="/dashboard/menu" label="Menu" />
+          <SideItem to="/dashboard/chat" label="Chat" />
+          <SideItem to="/dashboard/report" label="Report" />
+        </nav>
+
+        <div className="leftSidebar__bottom">
+          <div className="leftSidebar__avatar" />
         </div>
       </aside>
+
+      <section className="dashboardShell__content">
+        <Outlet />
+      </section>
     </div>
   )
 }
