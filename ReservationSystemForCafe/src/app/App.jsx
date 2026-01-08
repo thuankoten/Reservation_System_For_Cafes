@@ -10,6 +10,8 @@ import ChatPage from '../features/dashboard/pages/ChatPage.jsx'
 import ReservationPage from '../features/dashboard/pages/ReservationPage.jsx'
 import MenuPage from '../features/dashboard/pages/MenuPage.jsx'
 import ReportPage from '../features/dashboard/pages/ReportPage.jsx'
+import AdminDashboardLayout from '../features/admin/layout/AdminDashboardLayout.jsx'
+import AdminTablesPage from '../features/admin/pages/AdminTablesPage.jsx'
 
 export default function App() {
   return (
@@ -40,6 +42,13 @@ export default function App() {
           <Route path="reservation" element={<Navigate to="/dashboard/reservations" replace />} />
           <Route index element={<Navigate to="overview" replace />} />
         </Route>
+
+        <Route path="/admin/dashboard" element={<AdminDashboardLayout />}>
+          <Route path="tables" element={<AdminTablesPage />} />
+          <Route index element={<Navigate to="tables" replace />} />
+        </Route>
+
+        <Route path="/admin/*" element={<Navigate to="/admin/dashboard" replace />} />
 
         <Route path="*" element={<Navigate to="/dashboard/overview" replace />} />
       </Route>

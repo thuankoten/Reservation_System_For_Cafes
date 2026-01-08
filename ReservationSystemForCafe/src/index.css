@@ -405,6 +405,18 @@ body {
    font-weight: 800;
  }
 
+ .adminTableForm {
+   display: grid;
+   grid-template-columns: 160px 160px 240px auto;
+   gap: 12px;
+   align-items: end;
+ }
+
+ .adminTableList {
+   display: grid;
+   gap: 12px;
+ }
+
 .error {
   color: #b91c1c;
 }
@@ -465,6 +477,10 @@ body {
     grid-template-columns: 1fr;
   }
   .overviewGrid2 {
+    grid-template-columns: 1fr;
+  }
+
+  .adminTableForm {
     grid-template-columns: 1fr;
   }
 }
