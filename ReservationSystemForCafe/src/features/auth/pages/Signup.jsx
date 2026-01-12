@@ -1,33 +1,38 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   GoogleAuthProvider,
   RecaptchaVerifier,
+  createUserWithEmailAndPassword,
   signInAnonymously,
-  signInWithEmailAndPassword,
   signInWithPhoneNumber,
   signInWithPopup,
+  updateProfile,
 } from 'firebase/auth'
 import { auth } from '../../../shared/firebase'
 import { useAuth } from '../AuthContext.jsx'
 
-export default function Login() {
+export default function Signup() {
   const navigate = useNavigate()
   const location = useLocation()
   const { user } = useAuth()
-
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [phone, setPhone] = useState('')
-  const [otp, setOtp] = useState('')
-  const [confirmationResult, setConfirmationResult] = useState(null)
-  const [error, setError] = useState('')
-  const [submitting, setSubmitting] = useState(false)
 
   const redirectTo = useMemo(() => {
     const from = location.state?.from?.pathname
     return from || '/dashboard/overview'
   }, [location.state])
+
+  const [displayName, setDisplayName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+
+  const [phone, setPhone] = useState('')
+  const [otp, setOtp] = useState('')
+  const [confirmationResult, setConfirmationResult] = useState(null)
+
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     if (user) navigate(redirectTo, { replace: true })
@@ -44,16 +49,24 @@ export default function Login() {
     return verifier
   }
 
-  async function onLoginWithEmail(e) {
+  async function onSignupWithEmail(e) {
     e.preventDefault()
     setError('')
-    setSubmitting(true)
 
+    if (password !== confirmPassword) {
+      setError('Passwords do not match')
+      return
+    }
+
+    setSubmitting(true)
     try {
-      await signInWithEmailAndPassword(auth, email, password)
+      const cred = await createUserWithEmailAndPassword(auth, email, password)
+      if (displayName.trim()) {
+        await updateProfile(cred.user, { displayName: displayName.trim() })
+      }
       navigate(redirectTo, { replace: true })
     } catch (err) {
-      setError(err?.message || 'Login failed')
+      setError(err?.message || 'Sign up failed')
     } finally {
       setSubmitting(false)
     }
@@ -115,8 +128,8 @@ export default function Login() {
 
   return (
     <div className="card">
-      <h2 className="pageTitle">Login</h2>
-      <div className="muted">Sign in to your account</div>
+      <h2 className="pageTitle">Sign up</h2>
+      <div className="muted">Create a new account</div>
 
       <div className="stack" style={{ marginTop: 12 }}>
         <button className="btn btn--primary" disabled={submitting} onClick={onContinueWithGoogle}>
@@ -129,10 +142,15 @@ export default function Login() {
       </div>
 
       <div className="muted" style={{ marginTop: 12 }}>
-        Or login with email
+        Or sign up with email
       </div>
 
-      <form onSubmit={onLoginWithEmail} className="stack" style={{ marginTop: 12 }}>
+      <form onSubmit={onSignupWithEmail} className="stack" style={{ marginTop: 12 }}>
+        <label className="field">
+          <div className="field__label">Name (optional)</div>
+          <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="input" />
+        </label>
+
         <label className="field">
           <div className="field__label">Email</div>
           <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required className="input" />
@@ -143,23 +161,24 @@ export default function Login() {
           <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" required className="input" />
         </label>
 
+        <label className="field">
+          <div className="field__label">Confirm password</div>
+          <input value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} type="password" required className="input" />
+        </label>
+
         {error ? <div className="error">{error}</div> : null}
 
         <button disabled={submitting} type="submit" className="btn btn--primary">
-          {submitting ? 'Please wait…' : 'Login'}
+          {submitting ? 'Please wait…' : 'Create account'}
         </button>
 
-        <Link className="btn" to="/auth/forgot-password">
-          Forgot password
-        </Link>
-
-        <Link className="btn" to="/auth/signup">
-          Go to Sign up
-        </Link>
+        <button type="button" className="btn" onClick={() => navigate('/auth/login')}>
+          Back to Login
+        </button>
       </form>
 
       <div className="muted" style={{ marginTop: 14 }}>
-        Or login with phone
+        Or sign up with phone
       </div>
 
       <div className="stack" style={{ marginTop: 12 }}>

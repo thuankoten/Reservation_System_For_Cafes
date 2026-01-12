@@ -2,6 +2,8 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import AppLayout from './AppLayout.jsx'
 import AuthPage from '../features/auth/pages/AuthPage.jsx'
 import Login from '../features/auth/pages/Login.jsx'
+import Signup from '../features/auth/pages/Signup.jsx'
+import ForgotPassword from '../features/auth/pages/ForgotPassword.jsx'
 import DashboardLayout from '../features/dashboard/layout/DashboardLayout.jsx'
 import OverviewPage from '../features/dashboard/pages/OverviewPage.jsx'
 import ProfilePage from '../features/dashboard/pages/ProfilePage.jsx'
@@ -21,7 +23,8 @@ export default function App() {
 
         <Route path="/auth" element={<AuthPage />}>
           <Route path="login" element={<Login />} />
-          <Route path="signup" element={<Login />} />
+          <Route path="signup" element={<Signup />} />
+          <Route path="forgot-password" element={<ForgotPassword />} />
         </Route>
 
         <Route

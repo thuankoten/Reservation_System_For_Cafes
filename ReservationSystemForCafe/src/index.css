@@ -31,13 +31,16 @@ body {
 }
 
 .dashboardShell {
-  min-height: 100vh;
+  height: 100vh;
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .dashboardShell__content {
   padding: 16px;
+  height: 100vh;
+  overflow: auto;
 }
 
 .leftSidebar {
@@ -47,6 +50,9 @@ body {
   flex-direction: column;
   gap: 14px;
   padding: 16px 12px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
 }
 
 .leftSidebar__brand {
@@ -80,12 +86,99 @@ body {
   padding: 10px 6px;
 }
 
-.leftSidebar__avatar {
+.leftSidebar__actions {
+  margin-bottom: 12px;
+}
+
+.leftSidebar__authLinks {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.leftSidebar__link {
+  color: #e5e7eb;
+  text-decoration: none;
+  font-size: 14px;
+  opacity: 0.95;
+}
+
+.leftSidebar__link:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.leftSidebar__divider {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.leftSidebar__logout {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: #e5e7eb;
+  border: 0;
+  padding: 8px 0;
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0.95;
+}
+
+.leftSidebar__logout:hover {
+  opacity: 1;
+}
+
+.leftSidebar__user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.leftSidebar__avatarImg {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  object-fit: cover;
+  background: #e5e7eb;
+}
+
+.leftSidebar__avatarFallback {
   width: 36px;
   height: 36px;
   border-radius: 999px;
   background: #e5e7eb;
-  opacity: 0.9;
+  display: grid;
+  place-items: center;
+}
+
+.leftSidebar__avatarInitials {
+  font-size: 12px;
+  font-weight: 800;
+  color: #111827;
+}
+
+.leftSidebar__userMeta {
+  min-width: 0;
+}
+
+.leftSidebar__userName {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
+.leftSidebar__userRole {
+  color: rgba(229, 231, 235, 0.75);
+  font-size: 12px;
+  line-height: 1.2;
 }
 
 .sideItem {
@@ -103,6 +196,24 @@ body {
   color: #e5e7eb;
   background: transparent;
   border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sideItem__badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #eaf211;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .sideItem--active {
@@ -458,10 +569,12 @@ body {
 @media (max-width: 900px) {
   .dashboardShell {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
   }
   .leftSidebar {
     position: sticky;
     top: 0;
+    height: auto;
     flex-direction: row;
     align-items: center;
     overflow-x: auto;
