@@ -53,6 +53,7 @@ body {
   position: sticky;
   top: 0;
   height: 100vh;
+  overflow: hidden;
 }
 
 .leftSidebar__brand {
@@ -79,11 +80,14 @@ body {
   display: grid;
   gap: 6px;
   padding: 6px 6px;
+  min-height: 0;
+  overflow: auto;
 }
 
 .leftSidebar__bottom {
   margin-top: auto;
-  padding: 10px 6px;
+  padding: 10px 6px 34px;
+  flex: 0 0 auto;
 }
 
 .leftSidebar__actions {
@@ -143,6 +147,8 @@ body {
   border-radius: 999px;
   object-fit: cover;
   background: #e5e7eb;
+  display: block;
+  flex-shrink: 0;
 }
 
 .leftSidebar__avatarFallback {
@@ -152,6 +158,7 @@ body {
   background: #e5e7eb;
   display: grid;
   place-items: center;
+  flex-shrink: 0;
 }
 
 .leftSidebar__avatarInitials {
@@ -565,6 +572,201 @@ body {
   width: 100%;
   max-width: 420px;
 }
+
+ .ghAuth {
+   width: 100%;
+   display: grid;
+   gap: 16px;
+ }
+
+ .ghAuth__header {
+   display: grid;
+   place-items: center;
+   gap: 10px;
+ }
+
+ .ghAuth__logo {
+   width: 48px;
+   height: 48px;
+   border-radius: 999px;
+   background: #111827;
+   color: #ffffff;
+   display: grid;
+   place-items: center;
+   font-weight: 900;
+   letter-spacing: 0.02em;
+ }
+
+ .ghAuth__title {
+   margin: 0;
+   font-size: 24px;
+   font-weight: 500;
+   color: #111827;
+ }
+
+ .ghAuth__panel {
+   background: #ffffff;
+   border: 1px solid #d0d7de;
+   border-radius: 12px;
+   padding: 16px;
+ }
+
+ .ghForm {
+   display: grid;
+   gap: 14px;
+ }
+
+ .ghField {
+   display: grid;
+   gap: 6px;
+ }
+
+ .ghField__label {
+   font-size: 14px;
+   font-weight: 600;
+   color: #111827;
+ }
+
+ .ghField__labelRow {
+   display: flex;
+   justify-content: space-between;
+   align-items: baseline;
+   gap: 12px;
+ }
+
+ .ghInput {
+   height: 34px;
+   padding: 6px 10px;
+   border-radius: 6px;
+   border: 1px solid #d0d7de;
+   background: #ffffff;
+   color: #111827;
+   outline: none;
+ }
+
+ .ghInput:focus {
+   border-color: #0969da;
+   box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.15);
+ }
+
+ .ghPrimaryButton {
+   height: 40px;
+   border-radius: 6px;
+   border: 1px solid rgba(27, 31, 36, 0.15);
+   background: #1f883d;
+   color: #ffffff;
+   font-weight: 700;
+   cursor: pointer;
+ }
+
+ .ghPrimaryButton:disabled {
+   opacity: 0.7;
+   cursor: not-allowed;
+ }
+
+ .ghDivider {
+   position: relative;
+   margin: 16px 0;
+   height: 1px;
+   background: #d0d7de;
+ }
+
+ .ghDivider__text {
+   position: absolute;
+   top: 50%;
+   left: 50%;
+   transform: translate(-50%, -50%);
+   padding: 0 12px;
+   background: #ffffff;
+   color: #57606a;
+   font-size: 12px;
+   text-transform: lowercase;
+ }
+
+ .ghProviders {
+   display: grid;
+   gap: 10px;
+ }
+
+ .ghProviderButton {
+   height: 40px;
+   border-radius: 6px;
+   border: 1px solid #d0d7de;
+   background: #f6f8fa;
+   color: #111827;
+   font-weight: 600;
+   cursor: pointer;
+ }
+
+ .ghProviderButton:disabled {
+   opacity: 0.7;
+   cursor: not-allowed;
+ }
+
+ .ghLink {
+   color: #0969da;
+   text-decoration: none;
+ }
+
+ .ghLink:hover {
+   text-decoration: underline;
+ }
+
+ .ghAuth__footer {
+   background: #ffffff;
+   border: 1px solid #d0d7de;
+   border-radius: 12px;
+   padding: 16px;
+   text-align: center;
+   color: #57606a;
+ }
+
+ .authProviders {
+   display: flex;
+   gap: 12px;
+   flex-wrap: wrap;
+ }
+
+ .brandButton {
+   height: 44px;
+   padding: 0 14px;
+   border-radius: 12px;
+   border: 1px solid #e5e7eb;
+   background: #111827;
+   color: #ffffff;
+   font-weight: 700;
+   cursor: pointer;
+ }
+
+ .brandButton:disabled {
+   opacity: 0.7;
+   cursor: not-allowed;
+ }
+
+ .brandButton--facebook {
+   background: #1877f2;
+   border-color: #1877f2;
+ }
+
+ .brandIconButton {
+   width: 44px;
+   height: 44px;
+   border-radius: 999px;
+   border: 1px solid #e5e7eb;
+   background: #ffffff;
+   color: #111827;
+   font-weight: 900;
+   cursor: pointer;
+ }
+
+ .brandIconButton:disabled {
+   opacity: 0.7;
+   cursor: not-allowed;
+ }
+
+ .brandIconButton--google {
+   border-color: #e5e7eb;
+ }
 
 @media (max-width: 900px) {
   .dashboardShell {
