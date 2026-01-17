@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, writeBatch } from 'firebase/firestore'
+import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore'
 import { db } from '../../../shared/firebase'
 import { useAuth } from '../../auth/AuthContext.jsx'
 
@@ -11,7 +11,6 @@ export default function FloorPage() {
   const [error, setError] = useState('')
   const [reservations, setReservations] = useState([])
   const [reservationsError, setReservationsError] = useState('')
-  const [seeding, setSeeding] = useState(false)
 
   useEffect(() => {
     setError('')
@@ -71,12 +70,19 @@ export default function FloorPage() {
     }
   }
 
+  const now = new Date()
   const activeReservations = reservations
-    .filter((r) => String(r.status || '').toLowerCase() === 'active')
-    .map((r) => ({
-      ...r,
-      startTimeDate: toDate(r.startTime),
-    }))
+    .map((r) => {
+      const status = String(r.status || '').toLowerCase()
+      const startTimeDate = toDate(r.startTime)
+      const holdExpiresAt = toDate(r.holdExpiresAt)
+      return { ...r, _status: status, startTimeDate, _holdExpiresAt: holdExpiresAt }
+    })
+    .filter((r) => {
+      if (r._status === 'confirmed') return true
+      if (r._status === 'hold') return r._holdExpiresAt && r._holdExpiresAt > now
+      return false
+    })
 
   const reservationByTableId = new Map()
   for (const r of activeReservations) {
@@ -85,8 +91,12 @@ export default function FloorPage() {
   }
 
   const filteredTables = tables.filter((t) => {
+    const status = normalizedStatus(t.status)
+    const hasReservation = reservationByTableId.has(t.id)
+
+    const effectiveStatus = hasReservation ? 'reserved' : status
     if (activeStatus === 'all') return true
-    return normalizedStatus(t.status) === activeStatus
+    return effectiveStatus === activeStatus
   })
 
   const filteredReservations = activeReservations.filter((r) => {
@@ -103,38 +113,6 @@ export default function FloorPage() {
   }, {})
 
   const customerKeys = Object.keys(groupedByCustomer).sort((a, b) => a.localeCompare(b))
-
-  async function seedDemoTables() {
-    const ok = window.confirm('Create demo tables in Firestore? This may overwrite existing demo table docs (T01..T20).')
-    if (!ok) return
-
-    setError('')
-    setSeeding(true)
-    try {
-      const batch = writeBatch(db)
-      const demo = Array.from({ length: 20 }, (_, i) => {
-        const number = i + 1
-        const seats = number <= 6 ? 2 : number <= 14 ? 4 : 6
-        const status = number % 9 === 0 ? 'occupied' : number % 4 === 0 ? 'reserved' : 'available'
-        return { id: `T${String(number).padStart(2, '0')}`, number, seats, status }
-      })
-
-      for (const t of demo) {
-        batch.set(doc(db, 'tables', t.id), {
-          number: t.number,
-          seats: t.seats,
-          status: t.status,
-          updatedAt: serverTimestamp(),
-        })
-      }
-
-      await batch.commit()
-    } catch (e) {
-      setError(e?.message || 'Failed to seed demo tables')
-    } finally {
-      setSeeding(false)
-    }
-  }
 
   return (
     <div className="card">
@@ -172,12 +150,6 @@ export default function FloorPage() {
       {error ? <div className="error" style={{ marginTop: 12 }}>{error}</div> : null}
       {reservationsError ? <div className="error" style={{ marginTop: 12 }}>{reservationsError}</div> : null}
 
-      <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        <button className="btn" disabled={seeding} onClick={seedDemoTables}>
-          {seeding ? 'Seeding…' : 'Seed demo tables'}
-        </button>
-      </div>
-
       <div className="tablesFilters" aria-label="Tables status filter">
         <button
           type="button"
@@ -213,12 +185,14 @@ export default function FloorPage() {
         {activeView === 'map'
           ? filteredTables.map((t) => {
               const status = normalizedStatus(t.status)
+              const hasReservation = reservationByTableId.has(t.id)
+              const effectiveStatus = hasReservation ? 'reserved' : status
               const r = reservationByTableId.get(t.id)
               return (
-                <div key={t.id} className={`tableCard tableCard--${status}`}>
+                <div key={t.id} className={`tableCard tableCard--${effectiveStatus}`}>
                   <div className="tableCard__top">
                     <div className="tableCard__title">Table {t.number}</div>
-                    <div className={`statusPill statusPill--${status}`}>{status}</div>
+                    <div className={`statusPill statusPill--${effectiveStatus}`}>{effectiveStatus}</div>
                   </div>
                   <div className="tableCard__meta">Seats: {t.seats || '?'}</div>
                   {r ? (

@@ -1,18 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { signOut } from 'firebase/auth'
 import {
-  addDoc,
   collection,
-  doc,
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp,
-  updateDoc,
   where,
 } from 'firebase/firestore'
 import { auth, db } from '../../../shared/firebase'
 import { useAuth } from '../../auth/AuthContext'
+import { useNavigate } from 'react-router-dom'
 
 function toISODateTimeLocalValue(date) {
   const pad = (n) => String(n).padStart(2, '0')
@@ -20,13 +17,13 @@ function toISODateTimeLocalValue(date) {
 }
 
 export default function CustomerDashboard() {
+  const navigate = useNavigate()
   const { user } = useAuth()
   const [tables, setTables] = useState([])
   const [myReservations, setMyReservations] = useState([])
 
   const [selectedTableId, setSelectedTableId] = useState('')
   const [partySize, setPartySize] = useState(2)
-  const [startTimeLocal, setStartTimeLocal] = useState(() => toISODateTimeLocalValue(new Date(Date.now() + 30 * 60 * 1000)))
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -71,59 +68,8 @@ export default function CustomerDashboard() {
     [tables]
   )
 
-  async function createReservation() {
-    setError('')
-    if (!selectedTableId) {
-      setError('Please select a table')
-      return
-    }
-    if (!user?.uid) {
-      setError('Not authenticated')
-      return
-    }
-
-    setSubmitting(true)
-    try {
-      const startTime = new Date(startTimeLocal)
-
-      await addDoc(collection(db, 'reservations'), {
-        userId: user.uid,
-        userEmail: user.email || null,
-        tableId: selectedTableId,
-        partySize: Number(partySize),
-        startTime,
-        status: 'active',
-        createdAt: serverTimestamp(),
-      })
-
-      await updateDoc(doc(db, 'tables', selectedTableId), {
-        status: 'reserved',
-        updatedAt: serverTimestamp(),
-      })
-    } catch (e) {
-      setError(e?.message || 'Failed to create reservation')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  async function cancelReservation(reservationId, tableId) {
-    setError('')
-    try {
-      await updateDoc(doc(db, 'reservations', reservationId), {
-        status: 'cancelled',
-        cancelledAt: serverTimestamp(),
-      })
-
-      if (tableId) {
-        await updateDoc(doc(db, 'tables', tableId), {
-          status: 'available',
-          updatedAt: serverTimestamp(),
-        })
-      }
-    } catch (e) {
-      setError(e?.message || 'Failed to cancel reservation')
-    }
+  function createReservation() {
+    navigate('/dashboard/reservations', { replace: false })
   }
 
   return (
@@ -139,9 +85,8 @@ export default function CustomerDashboard() {
       </header>
 
       <section style={{ marginTop: 16, border: '1px solid #e5e7eb', borderRadius: 12, padding: 16 }}>
-        <h3 style={{ marginTop: 0 }}>Create Reservation</h3>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 12 }}>
+        <h3 style={{ marginTop: 0 }}>Book a table</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: '220px 160px 220px auto', gap: 12, alignItems: 'end' }}>
           <label style={{ display: 'grid', gap: 6 }}>
             Table
             <select value={selectedTableId} onChange={(e) => setSelectedTableId(e.target.value)} style={{ padding: 10 }}>
@@ -157,29 +102,13 @@ export default function CustomerDashboard() {
           </label>
 
           <label style={{ display: 'grid', gap: 6 }}>
-            Party size
-            <input
-              value={partySize}
-              onChange={(e) => setPartySize(e.target.value)}
-              type="number"
-              min={1}
-              style={{ padding: 10 }}
-            />
-          </label>
-
-          <label style={{ display: 'grid', gap: 6 }}>
-            Time
-            <input
-              value={startTimeLocal}
-              onChange={(e) => setStartTimeLocal(e.target.value)}
-              type="datetime-local"
-              style={{ padding: 10 }}
-            />
+            <div style={{ fontSize: 12, opacity: 0.75 }}>Party size</div>
+            <input value={partySize} onChange={(e) => setPartySize(e.target.value)} type="number" min={1} style={{ padding: 10 }} />
           </label>
 
           <div style={{ display: 'grid', alignContent: 'end' }}>
             <button disabled={submitting} onClick={createReservation} style={{ padding: 10 }}>
-              {submitting ? 'Creating...' : 'Reserve'}
+              Go to booking
             </button>
           </div>
         </div>
@@ -223,11 +152,9 @@ export default function CustomerDashboard() {
                 <div>Status: {r.status}</div>
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {r.status === 'active' ? (
-                  <button onClick={() => cancelReservation(r.id, r.tableId)} style={{ padding: 10 }}>
-                    Cancel
-                  </button>
-                ) : null}
+                <button onClick={() => navigate('/dashboard/reservations', { replace: false })} style={{ padding: 10 }}>
+                  Manage
+                </button>
               </div>
             </div>
           ))}

@@ -18,6 +18,8 @@ const STATUS_OPTIONS = [
   { value: 'occupied', label: 'Occupied' },
 ]
 
+const SEATS_OPTIONS = [2, 4, 6, 8]
+
 function toInt(value, fallback) {
   const n = Number.parseInt(String(value), 10)
   return Number.isFinite(n) ? n : fallback
@@ -70,6 +72,11 @@ export default function AdminTablesPage() {
     }
     if (!Number.isFinite(seats) || seats <= 0) {
       setError('Seats must be a positive integer')
+      return
+    }
+
+    if (!SEATS_OPTIONS.includes(seats)) {
+      setError('Seats must be one of: 2, 4, 6, 8')
       return
     }
     if (numberSet.has(number)) {
@@ -131,6 +138,11 @@ export default function AdminTablesPage() {
       return
     }
 
+    if (!SEATS_OPTIONS.includes(seats)) {
+      setError('Seats must be one of: 2, 4, 6, 8')
+      return
+    }
+
     const exists = rows.some((r) => r.id !== id && Number(r.number) === number)
     if (exists) {
       setError('Another table already has this number')
@@ -184,7 +196,13 @@ export default function AdminTablesPage() {
 
           <label className="field">
             <div className="field__label">Seats</div>
-            <input className="input" value={newSeats} onChange={(e) => setNewSeats(e.target.value)} placeholder="e.g. 2" />
+            <select className="input" value={newSeats} onChange={(e) => setNewSeats(e.target.value)}>
+              {SEATS_OPTIONS.map((s) => (
+                <option key={s} value={String(s)}>
+                  {s}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label className="field">
@@ -246,9 +264,9 @@ export default function AdminTablesPage() {
 
                   <label className="field" style={{ minWidth: 120 }}>
                     <div className="field__label">Seats</div>
-                    <input
+                    <select
                       className="input"
-                      value={isEditing ? draft.seats : r.seats ?? ''}
+                      value={isEditing ? String(draft.seats) : String(r.seats ?? '')}
                       disabled={!isEditing}
                       onChange={(e) =>
                         setEditing((prev) => ({
@@ -256,7 +274,13 @@ export default function AdminTablesPage() {
                           [r.id]: { ...prev[r.id], seats: e.target.value },
                         }))
                       }
-                    />
+                    >
+                      {SEATS_OPTIONS.map((s) => (
+                        <option key={s} value={String(s)}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
                   </label>
 
                   <label className="field" style={{ minWidth: 160 }}>

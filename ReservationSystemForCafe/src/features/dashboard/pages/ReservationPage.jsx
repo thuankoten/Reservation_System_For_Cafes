@@ -1,21 +1,61 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  addDoc,
   collection,
-  doc,
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp,
-  updateDoc,
   where,
 } from 'firebase/firestore'
 import { db } from '../../../shared/firebase'
 import { useAuth } from '../../auth/AuthContext.jsx'
+import { cancelReservation, createHoldReservation } from '../../../shared/services/reservations'
+import { calculateDepositAmount, calculateTotalAmount } from '../../../shared/utils/pricing'
+import {
+  buildDateFromISOAndMinutes,
+  clampDurationMinutes,
+  formatISODate,
+  listDurationOptions,
+  listStartMinutesForDuration,
+  minutesToTimeLabel,
+  TIMELINE_CONFIG,
+} from '../../../shared/utils/timeline'
 
-function toISODateTimeLocalValue(date) {
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+function toDate(v) {
+  if (!v) return null
+  if (typeof v?.toDate === 'function') return v.toDate()
+  try {
+    return new Date(v)
+  } catch {
+    return null
+  }
+}
+
+function formatCurrencyVND(amount) {
+  const n = Number(amount)
+  if (!Number.isFinite(n)) return '—'
+  try {
+    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(n)
+  } catch {
+    return `${n} VND`
+  }
+}
+
+function getDefaultStartMinutes({ isoDate, durationMinutes }) {
+  const dur = Number(durationMinutes)
+  const today = formatISODate(new Date())
+  const isToday = isoDate === today
+
+  const startOptions = listStartMinutesForDuration({ durationMinutes: dur })
+  if (startOptions.length === 0) return TIMELINE_CONFIG.openMinutes
+  if (!isToday) return startOptions[0]
+
+  const now = new Date()
+  const currentMinutes = now.getHours() * 60 + now.getMinutes()
+  const roundedUp = Math.ceil(currentMinutes / TIMELINE_CONFIG.stepMinutes) * TIMELINE_CONFIG.stepMinutes
+  const candidate = Math.max(TIMELINE_CONFIG.openMinutes, roundedUp)
+
+  const found = startOptions.find((m) => m >= candidate)
+  return typeof found === 'number' ? found : startOptions[0]
 }
 
 export default function ReservationPage() {
@@ -25,9 +65,13 @@ export default function ReservationPage() {
 
   const [selectedTableId, setSelectedTableId] = useState('')
   const [partySize, setPartySize] = useState(2)
-  const [startTimeLocal, setStartTimeLocal] = useState(() =>
-    toISODateTimeLocalValue(new Date(Date.now() + 30 * 60 * 1000))
+
+  const [isoDate, setIsoDate] = useState(() => formatISODate(new Date()))
+  const [durationMinutes, setDurationMinutes] = useState(120)
+  const [startMinutes, setStartMinutes] = useState(() =>
+    getDefaultStartMinutes({ isoDate: formatISODate(new Date()), durationMinutes: 120 })
   )
+
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -72,6 +116,84 @@ export default function ReservationPage() {
     [tables]
   )
 
+  const selectedTable = useMemo(
+    () => tables.find((t) => t.id === selectedTableId) || null,
+    [selectedTableId, tables]
+  )
+
+  const durationOptions = useMemo(
+    () => listDurationOptions({ stepMinutes: TIMELINE_CONFIG.stepMinutes, maxDurationMinutes: TIMELINE_CONFIG.maxDurationMinutes }),
+    []
+  )
+
+  const startOptions = useMemo(
+    () => listStartMinutesForDuration({ durationMinutes: Number(durationMinutes) }),
+    [durationMinutes]
+  )
+
+  useEffect(() => {
+    setDurationMinutes((prev) => clampDurationMinutes(prev))
+  }, [])
+
+  useEffect(() => {
+    // Ensure current startMinutes is valid after changing date/duration
+    const opts = listStartMinutesForDuration({ durationMinutes: Number(durationMinutes) })
+    if (!opts.length) {
+      setStartMinutes(TIMELINE_CONFIG.openMinutes)
+      return
+    }
+    if (!opts.includes(startMinutes)) {
+      setStartMinutes(getDefaultStartMinutes({ isoDate, durationMinutes }))
+    }
+  }, [durationMinutes, isoDate, startMinutes])
+
+  const pricing = useMemo(() => {
+    if (!selectedTable) return null
+    const seats = Number(selectedTable.seats)
+    const dur = Number(durationMinutes)
+    const totalAmount = calculateTotalAmount({ seats, durationMinutes: dur })
+    if (totalAmount == null) return null
+    const depositAmount = calculateDepositAmount({ totalAmount, depositPercent: 0.3 })
+    if (depositAmount == null) return null
+    return { totalAmount, depositAmount }
+  }, [durationMinutes, selectedTable])
+
+  const activeHoldReservation = useMemo(() => {
+    const now = new Date()
+    for (const r of myReservations) {
+      const status = String(r.status || '').toLowerCase()
+      if (status !== 'hold') continue
+      const expires = toDate(r.holdExpiresAt)
+      if (expires && expires > now) return { ...r, holdExpiresAtDate: expires }
+    }
+    return null
+  }, [myReservations])
+
+  const [holdRemainingMs, setHoldRemainingMs] = useState(0)
+  useEffect(() => {
+    if (!activeHoldReservation?.holdExpiresAtDate) {
+      setHoldRemainingMs(0)
+      return
+    }
+
+    const tick = () => {
+      const ms = activeHoldReservation.holdExpiresAtDate.getTime() - Date.now()
+      setHoldRemainingMs(Math.max(0, ms))
+    }
+
+    tick()
+    const id = window.setInterval(tick, 1000)
+    return () => window.clearInterval(id)
+  }, [activeHoldReservation?.holdExpiresAtDate])
+
+  const holdCountdownText = useMemo(() => {
+    if (!holdRemainingMs) return ''
+    const totalSec = Math.ceil(holdRemainingMs / 1000)
+    const mm = Math.floor(totalSec / 60)
+    const ss = totalSec % 60
+    return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
+  }, [holdRemainingMs])
+
   async function createReservation() {
     setError('')
     if (!selectedTableId) {
@@ -83,23 +205,28 @@ export default function ReservationPage() {
       return
     }
 
+    if (!selectedTable) {
+      setError('Selected table not found')
+      return
+    }
+
+    const seats = Number(selectedTable.seats)
+    const party = Number(partySize)
+    if (Number.isFinite(seats) && Number.isFinite(party) && party > seats) {
+      setError('Party size exceeds table capacity')
+      return
+    }
+
     setSubmitting(true)
     try {
-      const startTime = new Date(startTimeLocal)
-
-      await addDoc(collection(db, 'reservations'), {
-        userId: user.uid,
-        userEmail: user.email || null,
-        tableId: selectedTableId,
-        partySize: Number(partySize),
-        startTime,
-        status: 'active',
-        createdAt: serverTimestamp(),
-      })
-
-      await updateDoc(doc(db, 'tables', selectedTableId), {
-        status: 'reserved',
-        updatedAt: serverTimestamp(),
+      await createHoldReservation({
+        db,
+        user,
+        table: selectedTable,
+        isoDate,
+        startMinutes,
+        durationMinutes,
+        partySize,
       })
     } catch (e) {
       setError(e?.message || 'Failed to create reservation')
@@ -108,20 +235,10 @@ export default function ReservationPage() {
     }
   }
 
-  async function cancelReservation(reservationId, tableId) {
+  async function onCancelReservation(reservationId, tableId, slotKeys) {
     setError('')
     try {
-      await updateDoc(doc(db, 'reservations', reservationId), {
-        status: 'cancelled',
-        cancelledAt: serverTimestamp(),
-      })
-
-      if (tableId) {
-        await updateDoc(doc(db, 'tables', tableId), {
-          status: 'available',
-          updatedAt: serverTimestamp(),
-        })
-      }
+      await cancelReservation({ db, reservationId, tableId, slotKeys })
     } catch (e) {
       setError(e?.message || 'Failed to cancel reservation')
     }
@@ -131,7 +248,7 @@ export default function ReservationPage() {
     <div className="stack">
       <div className="card">
         <h2 className="pageTitle">Reservation</h2>
-        <div className="muted">Create and manage your reservations (realtime)</div>
+        <div className="muted">Hold a table for 5 minutes, then proceed to deposit payment</div>
 
         {!user ? (
           <div className="muted" style={{ marginTop: 10 }}>
@@ -172,22 +289,85 @@ export default function ReservationPage() {
           </label>
 
           <label className="field">
-            <div className="field__label">Time</div>
+            <div className="field__label">Date</div>
             <input
-              value={startTimeLocal}
-              onChange={(e) => setStartTimeLocal(e.target.value)}
-              type="datetime-local"
+              value={isoDate}
+              onChange={(e) => setIsoDate(e.target.value)}
+              type="date"
               className="input"
               disabled={!user}
             />
           </label>
 
+          <label className="field">
+            <div className="field__label">Duration</div>
+            <select
+              value={durationMinutes}
+              onChange={(e) => setDurationMinutes(clampDurationMinutes(e.target.value))}
+              className="input"
+              disabled={!user}
+            >
+              {durationOptions.map((mins) => (
+                <option key={mins} value={mins}>
+                  {mins / 60}h
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="field">
+            <div className="field__label">Start time</div>
+            <select
+              value={startMinutes}
+              onChange={(e) => setStartMinutes(Number(e.target.value))}
+              className="input"
+              disabled={!user}
+            >
+              {startOptions.map((m) => (
+                <option key={m} value={m}>
+                  {minutesToTimeLabel(m)}
+                </option>
+              ))}
+            </select>
+          </label>
+
           <div className="field" style={{ alignSelf: 'end' }}>
             <button disabled={submitting || !user} onClick={createReservation} className="btn btn--primary">
-              {submitting ? 'Creating...' : 'Reserve'}
+              {submitting ? 'Creating...' : 'Hold (5 min)'}
             </button>
           </div>
         </div>
+
+        <div className="kv">
+          <div className="kv__row">
+            <div className="kv__k">Start</div>
+            <div className="kv__v">{minutesToTimeLabel(startMinutes)}</div>
+          </div>
+          <div className="kv__row">
+            <div className="kv__k">End</div>
+            <div className="kv__v">
+              {(() => {
+                const end = buildDateFromISOAndMinutes(isoDate, startMinutes + Number(durationMinutes || 0))
+                const mins = end.getHours() * 60 + end.getMinutes()
+                return minutesToTimeLabel(mins)
+              })()}
+            </div>
+          </div>
+          <div className="kv__row">
+            <div className="kv__k">Total</div>
+            <div className="kv__v">{pricing ? formatCurrencyVND(pricing.totalAmount) : '—'}</div>
+          </div>
+          <div className="kv__row">
+            <div className="kv__k">Deposit (30%)</div>
+            <div className="kv__v">{pricing ? formatCurrencyVND(pricing.depositAmount) : '—'}</div>
+          </div>
+        </div>
+
+        {activeHoldReservation ? (
+          <div className="muted" style={{ marginTop: 12 }}>
+            Hold active • expires in <b>{holdCountdownText}</b>
+          </div>
+        ) : null}
 
         {error ? <div className="error" style={{ marginTop: 12 }}>{error}</div> : null}
       </div>
@@ -205,8 +385,8 @@ export default function ReservationPage() {
                 <div className="muted">Status: {r.status}</div>
               </div>
               <div>
-                {r.status === 'active' ? (
-                  <button onClick={() => cancelReservation(r.id, r.tableId)} className="btn">
+                {['active', 'hold', 'confirmed'].includes(String(r.status || '').toLowerCase()) ? (
+                  <button onClick={() => onCancelReservation(r.id, r.tableId, r.slotKeys)} className="btn">
                     Cancel
                   </button>
                 ) : null}

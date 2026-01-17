@@ -28,6 +28,16 @@ function minutesFromNow(date) {
   return mins
 }
 
+function toDate(v) {
+  if (!v) return null
+  if (typeof v?.toDate === 'function') return v.toDate()
+  try {
+    return new Date(v)
+  } catch {
+    return null
+  }
+}
+
 export default function OverviewPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -79,19 +89,28 @@ export default function OverviewPage() {
     }
 
     setLoadingReservation(true)
-    const qActive = query(
+    const qRecent = query(
       collection(db, 'reservations'),
       where('userId', '==', user.uid),
-      where('status', '==', 'active'),
       orderBy('createdAt', 'desc'),
-      limit(1)
+      limit(10)
     )
 
     const unsub = onSnapshot(
-      qActive,
+      qRecent,
       (snap) => {
-        const doc = snap.docs[0]
-        setCurrentReservation(doc ? { id: doc.id, ...doc.data() } : null)
+        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        const now = new Date()
+        const normalized = rows.map((r) => {
+          const status = String(r.status || '').toLowerCase()
+          const holdExpiresAt = toDate(r.holdExpiresAt)
+          return { ...r, _status: status, _holdExpiresAt: holdExpiresAt }
+        })
+
+        const confirmed = normalized.find((r) => r._status === 'confirmed')
+        const hold = normalized.find((r) => r._status === 'hold' && r._holdExpiresAt && r._holdExpiresAt > now)
+
+        setCurrentReservation(confirmed || hold || null)
         setLoadingReservation(false)
       },
       (e) => {
@@ -122,6 +141,13 @@ export default function OverviewPage() {
       status: currentReservation.status,
     }
   }, [currentReservation])
+
+  const statusBadge = useMemo(() => {
+    const s = String(reservationSummary?.status || '').toLowerCase()
+    if (s === 'confirmed') return { tone: 'success', text: 'Confirmed' }
+    if (s === 'hold') return { tone: 'neutral', text: 'Hold' }
+    return { tone: 'neutral', text: s || '—' }
+  }, [reservationSummary?.status])
 
   function onQuickBook() {
     navigate('/dashboard/reservation', { replace: false })
@@ -193,7 +219,7 @@ export default function OverviewPage() {
                   <div className="muted">{reservationSummary.relative} • Party: {reservationSummary.partySize}</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center' }}>
-                  <Badge tone="success">Active</Badge>
+                  <Badge tone={statusBadge.tone}>{statusBadge.text}</Badge>
                 </div>
               </div>
               <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
