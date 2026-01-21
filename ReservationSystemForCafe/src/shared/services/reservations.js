@@ -7,7 +7,7 @@ import {
   updateDoc,
   writeBatch,
 } from 'firebase/firestore'
-import { calculateDepositAmount, calculateTotalAmount } from '../utils/pricing'
+import { calculateTotalAmount } from '../utils/pricing'
 import { buildDateFromISOAndMinutes, TIMELINE_CONFIG } from '../utils/timeline'
 import { buildSlotKeys, addMinutes } from '../utils/slotKeys'
 
@@ -27,12 +27,8 @@ export function computeReservationTimes({ isoDate, startMinutes, durationMinutes
 export function buildReservationPrice({ tableSeats, durationMinutes }) {
   const totalAmount = calculateTotalAmount({ seats: tableSeats, durationMinutes })
   if (totalAmount == null) return null
-  const depositAmount = calculateDepositAmount({ totalAmount, depositPercent: 0.3 })
-  if (depositAmount == null) return null
   return {
     totalAmount,
-    depositPercent: 0.3,
-    depositAmount,
   }
 }
 
@@ -44,10 +40,20 @@ export async function createHoldReservation({
   startMinutes,
   durationMinutes,
   partySize,
+  customerName,
+  customerPhone,
+  customerEmail,
 }) {
   if (!db) throw new Error('Missing Firestore db')
   if (!user?.uid) throw new Error('Please sign in to create a reservation')
   if (!table?.id) throw new Error('Please select a table')
+
+  const name = String(customerName || '').trim()
+  const phone = String(customerPhone || '').trim()
+  const email = String(customerEmail || '').trim()
+  if (!name) throw new Error('Please enter your name')
+  if (!phone) throw new Error('Please enter your phone number')
+  if (!email) throw new Error('Please enter your email')
 
   const dur = Number(durationMinutes)
   if (!Number.isFinite(dur) || dur <= 0) throw new Error('Invalid duration')
@@ -107,6 +113,10 @@ export async function createHoldReservation({
     tx.set(reservationRef, {
       userId: user.uid,
       userEmail: user.email || null,
+      isAnonymous: Boolean(user.isAnonymous),
+      customerName: name,
+      customerPhone: phone,
+      customerEmail: email,
       tableId: table.id,
       tableNumber: table.number ?? null,
       tableSeats: seats,
@@ -118,8 +128,6 @@ export async function createHoldReservation({
       holdExpiresAt,
       slotKeys,
       totalAmount: pricing.totalAmount,
-      depositPercent: pricing.depositPercent,
-      depositAmount: pricing.depositAmount,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     })

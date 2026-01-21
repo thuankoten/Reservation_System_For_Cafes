@@ -9,6 +9,7 @@ import {
   query,
   serverTimestamp,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore'
 import { db } from '../../../shared/firebase'
 
@@ -19,6 +20,7 @@ const STATUS_OPTIONS = [
 ]
 
 const SEATS_OPTIONS = [2, 4, 6, 8]
+const FLOOR_OPTIONS = [1, 2, 3]
 
 function toInt(value, fallback) {
   const n = Number.parseInt(String(value), 10)
@@ -32,6 +34,7 @@ export default function AdminTablesPage() {
 
   const [newNumber, setNewNumber] = useState('')
   const [newSeats, setNewSeats] = useState('2')
+  const [newFloor, setNewFloor] = useState('1')
   const [newStatus, setNewStatus] = useState('available')
   const [creating, setCreating] = useState(false)
 
@@ -61,10 +64,39 @@ export default function AdminTablesPage() {
 
   const numberSet = useMemo(() => new Set(rows.map((r) => Number(r.number))), [rows])
 
+  async function assignFloors() {
+    const ok = window.confirm('Auto-assign floor (1/2/3) for all tables based on table number order?')
+    if (!ok) return
+
+    setError('')
+    try {
+      const sorted = rows
+        .slice()
+        .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
+
+      const perFloor = Math.max(1, Math.ceil(sorted.length / 3))
+      const batch = writeBatch(db)
+
+      for (let i = 0; i < sorted.length; i += 1) {
+        const r = sorted[i]
+        const floor = Math.min(3, Math.max(1, Math.floor(i / perFloor) + 1))
+        batch.update(doc(db, 'tables', r.id), {
+          floor,
+          updatedAt: serverTimestamp(),
+        })
+      }
+
+      await batch.commit()
+    } catch (e) {
+      setError(e?.message || 'Failed to assign floors')
+    }
+  }
+
   async function createTable() {
     setError('')
     const number = toInt(newNumber, NaN)
     const seats = toInt(newSeats, NaN)
+    const floor = toInt(newFloor, NaN)
 
     if (!Number.isFinite(number) || number <= 0) {
       setError('Table number must be a positive integer')
@@ -79,6 +111,10 @@ export default function AdminTablesPage() {
       setError('Seats must be one of: 2, 4, 6, 8')
       return
     }
+    if (!FLOOR_OPTIONS.includes(floor)) {
+      setError('Floor must be one of: 1, 2, 3')
+      return
+    }
     if (numberSet.has(number)) {
       setError('A table with this number already exists')
       return
@@ -89,11 +125,13 @@ export default function AdminTablesPage() {
       await addDoc(collection(db, 'tables'), {
         number,
         seats,
+        floor,
         status: newStatus,
         updatedAt: serverTimestamp(),
       })
       setNewNumber('')
       setNewSeats('2')
+      setNewFloor('1')
       setNewStatus('available')
     } catch (e) {
       setError(e?.message || 'Failed to create table')
@@ -108,6 +146,7 @@ export default function AdminTablesPage() {
       [r.id]: {
         number: r.number ?? '',
         seats: r.seats ?? '',
+        floor: r.floor ?? 1,
         status: r.status || 'available',
       },
     }))
@@ -128,6 +167,7 @@ export default function AdminTablesPage() {
 
     const number = toInt(draft.number, NaN)
     const seats = toInt(draft.seats, NaN)
+    const floor = toInt(draft.floor, NaN)
 
     if (!Number.isFinite(number) || number <= 0) {
       setError('Table number must be a positive integer')
@@ -154,6 +194,7 @@ export default function AdminTablesPage() {
       await updateDoc(doc(db, 'tables', id), {
         number,
         seats,
+        floor,
         status: draft.status,
         updatedAt: serverTimestamp(),
       })
@@ -206,6 +247,17 @@ export default function AdminTablesPage() {
           </label>
 
           <label className="field">
+            <div className="field__label">Floor</div>
+            <select className="input" value={newFloor} onChange={(e) => setNewFloor(e.target.value)}>
+              {FLOOR_OPTIONS.map((f) => (
+                <option key={f} value={String(f)}>
+                  {f}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="field">
             <div className="field__label">Status</div>
             <select className="input" value={newStatus} onChange={(e) => setNewStatus(e.target.value)}>
               {STATUS_OPTIONS.map((o) => (
@@ -230,7 +282,12 @@ export default function AdminTablesPage() {
             <div style={{ fontWeight: 700 }}>All tables</div>
             <div className="muted">Total: {rows.length}</div>
           </div>
-          {loading ? <div className="muted">Loading…</div> : null}
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button className="btn" disabled={loading || rows.length === 0} onClick={assignFloors}>
+              Auto-assign floors
+            </button>
+            {loading ? <div className="muted">Loading…</div> : null}
+          </div>
         </div>
 
         <div className="adminTableList" style={{ marginTop: 12 }}>
@@ -278,6 +335,27 @@ export default function AdminTablesPage() {
                       {SEATS_OPTIONS.map((s) => (
                         <option key={s} value={String(s)}>
                           {s}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="field" style={{ minWidth: 120 }}>
+                    <div className="field__label">Floor</div>
+                    <select
+                      className="input"
+                      value={isEditing ? String(draft.floor) : String(r.floor ?? 1)}
+                      disabled={!isEditing}
+                      onChange={(e) =>
+                        setEditing((prev) => ({
+                          ...prev,
+                          [r.id]: { ...prev[r.id], floor: e.target.value },
+                        }))
+                      }
+                    >
+                      {FLOOR_OPTIONS.map((f) => (
+                        <option key={f} value={String(f)}>
+                          {f}
                         </option>
                       ))}
                     </select>

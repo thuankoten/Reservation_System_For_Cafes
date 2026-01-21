@@ -8,6 +8,7 @@ export default function FloorPage() {
   const [tables, setTables] = useState([])
   const [activeView, setActiveView] = useState('map')
   const [activeStatus, setActiveStatus] = useState('all')
+  const [activeFloor, setActiveFloor] = useState(1)
   const [error, setError] = useState('')
   const [reservations, setReservations] = useState([])
   const [reservationsError, setReservationsError] = useState('')
@@ -99,6 +100,32 @@ export default function FloorPage() {
     return effectiveStatus === activeStatus
   })
 
+  const floorIdForTable = (t) => {
+    const explicit = Number(t?.floor)
+    if (explicit === 1 || explicit === 2 || explicit === 3) return explicit
+
+    const n = Number(t?.number)
+    if (!Number.isFinite(n) || n <= 0) return 1
+    const maxNumber = Math.max(1, ...tables.map((x) => Number(x?.number) || 0))
+    const perFloor = Math.max(1, Math.ceil(maxNumber / 3))
+    return Math.min(3, Math.max(1, Math.ceil(n / perFloor)))
+  }
+
+  const mapTables = filteredTables
+    .filter((t) => floorIdForTable(t) === activeFloor)
+    .slice()
+    .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
+
+  const mapCount = mapTables.length
+  const mapCols = (() => {
+    if (mapCount <= 1) return 1
+    if (mapCount <= 3) return mapCount
+    if (mapCount <= 6) return 3
+    if (mapCount === 9) return 3
+    return 4
+  })()
+  const mapRows = Math.max(1, Math.ceil(mapCount / mapCols))
+
   const filteredReservations = activeReservations.filter((r) => {
     if (activeStatus === 'all') return true
     if (activeStatus === 'reserved') return true
@@ -115,7 +142,7 @@ export default function FloorPage() {
   const customerKeys = Object.keys(groupedByCustomer).sort((a, b) => a.localeCompare(b))
 
   return (
-    <div className="card">
+    <div className={activeView === 'map' ? 'card tablesCard tablesCard--map' : 'card'}>
       <div className="tablesTop">
         <div className="tablesTop__tabs" role="tablist" aria-label="Tables views">
           <button
@@ -181,36 +208,55 @@ export default function FloorPage() {
         </button>
       </div>
 
-      <div className="grid">
-        {activeView === 'map'
-          ? filteredTables.map((t) => {
-              const status = normalizedStatus(t.status)
-              const hasReservation = reservationByTableId.has(t.id)
-              const effectiveStatus = hasReservation ? 'reserved' : status
-              const r = reservationByTableId.get(t.id)
-              return (
-                <div key={t.id} className={`tableCard tableCard--${effectiveStatus}`}>
-                  <div className="tableCard__top">
-                    <div className="tableCard__title">Table {t.number}</div>
-                    <div className={`statusPill statusPill--${effectiveStatus}`}>{effectiveStatus}</div>
+      <div className={activeView === 'map' ? 'floorLayoutWrap' : 'grid'}>
+        {activeView === 'map' ? (
+          <div className="floorLayout">
+            <div
+              className="floorPlan"
+              role="region"
+              aria-label="Floor plan"
+              style={{ '--cols': mapCols, '--rows': mapRows }}
+            >
+              {mapTables.map((t) => {
+                const status = normalizedStatus(t.status)
+                const hasReservation = reservationByTableId.has(t.id)
+                const effectiveStatus = hasReservation ? 'reserved' : status
+                return (
+                  <div key={t.id} className={`tableTile tableTile--${effectiveStatus}`}>
+                    <div className="tableTile__number">{t.number}</div>
+                    <div className="tableTile__meta">Seats {t.seats || '?'}</div>
+                    <div className={`tableTile__status tableTile__status--${effectiveStatus}`}>{effectiveStatus}</div>
                   </div>
-                  <div className="tableCard__meta">Seats: {t.seats || '?'}</div>
-                  {r ? (
-                    <div className="tableCard__reservation">
-                      <div className="muted">Reserved for: {r.userEmail || r.userId || 'Guest'}</div>
-                      <div className="muted">
-                        {formatTime(r.startTimeDate)} • Party: {r.partySize || '—'}
-                      </div>
+                )
+              })}
+            </div>
+
+            <div className="floorSelector" role="navigation" aria-label="Floor selector">
+              {[1, 2, 3].map((id) => {
+                const label = id === 1 ? '1st Floor' : id === 2 ? '2nd Floor' : '3rd Floor'
+                const isActive = activeFloor === id
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`floorCard ${isActive ? 'floorCard--active' : ''}`}
+                    onClick={() => setActiveFloor(id)}
+                  >
+                    <div className="floorCard__label">{label}</div>
+                    <div className="floorCard__thumb" aria-hidden="true">
+                      <span className="floorCard__bar" />
+                      <span className="floorCard__bar" />
+                      <span className="floorCard__bar" />
+                      <span className="floorCard__bar" />
+                      <span className="floorCard__bar" />
+                      <span className="floorCard__bar" />
                     </div>
-                  ) : (
-                    <div className="tableCard__reservation">
-                      <div className="muted">No active reservation</div>
-                    </div>
-                  )}
-                </div>
-              )
-            })
-          : null}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        ) : null}
 
         {activeView === 'byCustomer' ? (
           <div className="tablesSection" style={{ gridColumn: '1 / -1' }}>

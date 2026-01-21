@@ -1,9 +1,3 @@
-export function roundUpToThousands(amount) {
-  const n = Number(amount)
-  if (!Number.isFinite(n)) return 0
-  return Math.ceil(n / 1000) * 1000
-}
-
 export function pricePer2hBySeats(seats) {
   const s = Number(seats)
   if (!Number.isFinite(s) || s < 2 || s % 2 !== 0) return null
@@ -19,12 +13,4 @@ export function calculateTotalAmount({ seats, durationMinutes }) {
 
   const hours2Factor = mins / 120
   return Math.round(pricePer2h * hours2Factor)
-}
-
-export function calculateDepositAmount({ totalAmount, depositPercent = 0.3 }) {
-  const total = Number(totalAmount)
-  const p = Number(depositPercent)
-  if (!Number.isFinite(total) || total < 0) return null
-  if (!Number.isFinite(p) || p <= 0) return 0
-  return roundUpToThousands(total * p)
 }

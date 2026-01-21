@@ -6,10 +6,11 @@ import {
   query,
   where,
 } from 'firebase/firestore'
-import { db } from '../../../shared/firebase'
+import { signInAnonymously } from 'firebase/auth'
+import { auth, db } from '../../../shared/firebase'
 import { useAuth } from '../../auth/AuthContext.jsx'
 import { cancelReservation, createHoldReservation } from '../../../shared/services/reservations'
-import { calculateDepositAmount, calculateTotalAmount } from '../../../shared/utils/pricing'
+import { calculateTotalAmount } from '../../../shared/utils/pricing'
 import {
   buildDateFromISOAndMinutes,
   clampDurationMinutes,
@@ -72,6 +73,10 @@ export default function ReservationPage() {
     getDefaultStartMinutes({ isoDate: formatISODate(new Date()), durationMinutes: 120 })
   )
 
+  const [customerName, setCustomerName] = useState('')
+  const [customerPhone, setCustomerPhone] = useState('')
+  const [customerEmail, setCustomerEmail] = useState('')
+
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -110,6 +115,13 @@ export default function ReservationPage() {
 
     return () => unsub()
   }, [user?.uid])
+
+  useEffect(() => {
+    if (!user) return
+
+    if (!customerName && user.displayName) setCustomerName(user.displayName)
+    if (!customerEmail && user.email) setCustomerEmail(user.email)
+  }, [user, customerEmail, customerName])
 
   const availableTables = useMemo(
     () => tables.filter((t) => (t.status || 'available') === 'available'),
@@ -153,9 +165,7 @@ export default function ReservationPage() {
     const dur = Number(durationMinutes)
     const totalAmount = calculateTotalAmount({ seats, durationMinutes: dur })
     if (totalAmount == null) return null
-    const depositAmount = calculateDepositAmount({ totalAmount, depositPercent: 0.3 })
-    if (depositAmount == null) return null
-    return { totalAmount, depositAmount }
+    return { totalAmount }
   }, [durationMinutes, selectedTable])
 
   const activeHoldReservation = useMemo(() => {
@@ -200,9 +210,16 @@ export default function ReservationPage() {
       setError('Please select a table')
       return
     }
-    if (!user?.uid) {
-      setError('Please sign in to create a reservation')
-      return
+
+    let bookingUser = user
+    if (!bookingUser?.uid) {
+      try {
+        const cred = await signInAnonymously(auth)
+        bookingUser = cred.user
+      } catch (e) {
+        setError(e?.message || 'Failed to start guest session')
+        return
+      }
     }
 
     if (!selectedTable) {
@@ -221,12 +238,15 @@ export default function ReservationPage() {
     try {
       await createHoldReservation({
         db,
-        user,
+        user: bookingUser,
         table: selectedTable,
         isoDate,
         startMinutes,
         durationMinutes,
         partySize,
+        customerName,
+        customerPhone,
+        customerEmail,
       })
     } catch (e) {
       setError(e?.message || 'Failed to create reservation')
@@ -248,22 +268,35 @@ export default function ReservationPage() {
     <div className="stack">
       <div className="card">
         <h2 className="pageTitle">Reservation</h2>
-        <div className="muted">Hold a table for 5 minutes, then proceed to deposit payment</div>
-
-        {!user ? (
-          <div className="muted" style={{ marginTop: 10 }}>
-            Browsing as guest. You can view availability, but reservation actions are disabled.
-          </div>
-        ) : null}
+        <div className="muted">Hold a table for 5 minutes</div>
 
         <div className="formGrid" style={{ marginTop: 12 }}>
+          <label className="field">
+            <div className="field__label">Name</div>
+            <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="input" />
+          </label>
+
+          <label className="field">
+            <div className="field__label">Phone</div>
+            <input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} className="input" />
+          </label>
+
+          <label className="field">
+            <div className="field__label">Email</div>
+            <input
+              value={customerEmail}
+              onChange={(e) => setCustomerEmail(e.target.value)}
+              className="input"
+              disabled={Boolean(user?.email)}
+            />
+          </label>
+
           <label className="field">
             <div className="field__label">Table</div>
             <select
               value={selectedTableId}
               onChange={(e) => setSelectedTableId(e.target.value)}
               className="input"
-              disabled={!user}
             >
               <option value="" disabled>
                 Select a table
@@ -284,7 +317,6 @@ export default function ReservationPage() {
               type="number"
               min={1}
               className="input"
-              disabled={!user}
             />
           </label>
 
@@ -295,7 +327,6 @@ export default function ReservationPage() {
               onChange={(e) => setIsoDate(e.target.value)}
               type="date"
               className="input"
-              disabled={!user}
             />
           </label>
 
@@ -305,7 +336,6 @@ export default function ReservationPage() {
               value={durationMinutes}
               onChange={(e) => setDurationMinutes(clampDurationMinutes(e.target.value))}
               className="input"
-              disabled={!user}
             >
               {durationOptions.map((mins) => (
                 <option key={mins} value={mins}>
@@ -321,7 +351,6 @@ export default function ReservationPage() {
               value={startMinutes}
               onChange={(e) => setStartMinutes(Number(e.target.value))}
               className="input"
-              disabled={!user}
             >
               {startOptions.map((m) => (
                 <option key={m} value={m}>
@@ -332,7 +361,7 @@ export default function ReservationPage() {
           </label>
 
           <div className="field" style={{ alignSelf: 'end' }}>
-            <button disabled={submitting || !user} onClick={createReservation} className="btn btn--primary">
+            <button disabled={submitting} onClick={createReservation} className="btn btn--primary">
               {submitting ? 'Creating...' : 'Hold (5 min)'}
             </button>
           </div>
@@ -357,10 +386,6 @@ export default function ReservationPage() {
             <div className="kv__k">Total</div>
             <div className="kv__v">{pricing ? formatCurrencyVND(pricing.totalAmount) : '—'}</div>
           </div>
-          <div className="kv__row">
-            <div className="kv__k">Deposit (30%)</div>
-            <div className="kv__v">{pricing ? formatCurrencyVND(pricing.depositAmount) : '—'}</div>
-          </div>
         </div>
 
         {activeHoldReservation ? (
@@ -375,7 +400,7 @@ export default function ReservationPage() {
       <div className="card">
         <h3 style={{ marginTop: 0 }}>My reservations</h3>
         <div className="stack">
-          {!user ? <div className="muted">Sign in to see your reservations.</div> : null}
+          {!user ? <div className="muted">Sign in to see your reservation history on this device.</div> : null}
           {user && myReservations.length === 0 ? <div className="muted">No reservations yet.</div> : null}
           {myReservations.map((r) => (
             <div key={r.id} className="rowCard">
