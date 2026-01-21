@@ -10,7 +10,7 @@ import ProfilePage from '../features/dashboard/pages/ProfilePage.jsx'
 import FloorPage from '../features/dashboard/pages/FloorPage.jsx'
 import ChatPage from '../features/dashboard/pages/ChatPage.jsx'
 import ReservationPage from '../features/dashboard/pages/ReservationPage.jsx'
-import MenuPage from '../features/dashboard/pages/MenuPage.jsx'
+import InformationPage from '../features/dashboard/pages/InformationPage.jsx'
 import ReportPage from '../features/dashboard/pages/ReportPage.jsx'
 import AdminDashboardLayout from '../features/admin/layout/AdminDashboardLayout.jsx'
 import AdminTablesPage from '../features/admin/pages/AdminTablesPage.jsx'
@@ -36,7 +36,7 @@ export default function App() {
 
           <Route path="tables" element={<FloorPage />} />
           <Route path="reservations" element={<ReservationPage />} />
-          <Route path="menu" element={<MenuPage />} />
+          <Route path="information" element={<InformationPage />} />
           <Route path="chat" element={<ChatPage />} />
 
           <Route path="report" element={<ReportPage />} />

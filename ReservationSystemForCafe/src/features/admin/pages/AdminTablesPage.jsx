@@ -241,9 +241,9 @@ export default function AdminTablesPage() {
             const isEditing = Boolean(draft)
             return (
               <div key={r.id} className="rowCard">
-                <div style={{ minWidth: 260 }}>
+                <div style={{ minWidth: 200 }}>
                   <div className="rowCard__title">Table {r.number}</div>
-                  <div className="muted">Doc ID: {r.id}</div>
+                  {/* <div className="muted">Doc ID: {r.id}</div> */}
                 </div>
 
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'end' }}>
@@ -306,9 +306,14 @@ export default function AdminTablesPage() {
 
                   <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                     {!isEditing ? (
-                      <button className="btn" onClick={() => beginEdit(r)}>
-                        Edit
-                      </button>
+                      <>
+                        <button className="btn" onClick={() => beginEdit(r)}>
+                          Edit
+                        </button>
+                        <button className="btn" disabled={deletingId === r.id} onClick={() => removeTable(r.id)}>
+                          {deletingId === r.id ? 'Deleting…' : 'Delete'}
+                        </button>
+                      </>
                     ) : (
                       <>
                         <button className="btn btn--primary" disabled={savingId === r.id} onClick={() => saveEdit(r.id)}>
@@ -319,10 +324,6 @@ export default function AdminTablesPage() {
                         </button>
                       </>
                     )}
-
-                    <button className="btn" disabled={deletingId === r.id} onClick={() => removeTable(r.id)}>
-                      {deletingId === r.id ? 'Deleting…' : 'Delete'}
-                    </button>
                   </div>
                 </div>
               </div>

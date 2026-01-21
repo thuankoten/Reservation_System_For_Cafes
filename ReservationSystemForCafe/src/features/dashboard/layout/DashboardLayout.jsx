@@ -10,7 +10,7 @@ export default function DashboardLayout() {
           { to: '/dashboard/overview', label: 'Overview' },
           { to: '/dashboard/tables', label: 'Tables' },
           { to: '/dashboard/reservations', label: 'Reservations' },
-          { to: '/dashboard/menu', label: 'Menu' },
+          { to: '/dashboard/information', label: 'Information' },
           { to: '/dashboard/chat', label: 'Chat' },
           { to: '/dashboard/report', label: 'Report' },
         ]}

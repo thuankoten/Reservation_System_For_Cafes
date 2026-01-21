@@ -7,7 +7,8 @@ import {
   signInWithPopup,
   updateProfile,
 } from 'firebase/auth'
-import { auth } from '../../../shared/firebase'
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { auth, db } from '../../../shared/firebase'
 import { useAuth } from '../AuthContext.jsx'
 
 export default function Signup() {
@@ -32,6 +33,25 @@ export default function Signup() {
     if (user) navigate(redirectTo, { replace: true })
   }, [navigate, redirectTo, user])
 
+  // 🔹 tạo user trong Firestore + role mặc định
+  async function createUserIfNotExists(user) {
+    if (!user || user.isAnonymous) return
+
+    const ref = doc(db, 'users', user.uid)
+    const snap = await getDoc(ref)
+
+    if (!snap.exists()) {
+      await setDoc(ref, {
+        uid: user.uid,
+        email: user.email || null,
+        displayName: user.displayName || null,
+        role: 'customer',
+        provider: user.providerData?.[0]?.providerId || 'password',
+        createdAt: serverTimestamp(),
+      })
+    }
+  }
+
   async function onSignupWithEmail(e) {
     e.preventDefault()
     setError('')
@@ -44,9 +64,15 @@ export default function Signup() {
     setSubmitting(true)
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, password)
+
       if (displayName.trim()) {
-        await updateProfile(cred.user, { displayName: displayName.trim() })
+        await updateProfile(cred.user, {
+          displayName: displayName.trim(),
+        })
       }
+
+      await createUserIfNotExists(cred.user)
+
       navigate(redirectTo, { replace: true })
     } catch (err) {
       setError(err?.message || 'Sign up failed')
@@ -59,7 +85,8 @@ export default function Signup() {
     setError('')
     setSubmitting(true)
     try {
-      await signInWithPopup(auth, new GoogleAuthProvider())
+      const cred = await signInWithPopup(auth, new GoogleAuthProvider())
+      await createUserIfNotExists(cred.user)
       navigate(redirectTo, { replace: true })
     } catch (err) {
       setError(err?.message || 'Google sign-in failed')
@@ -73,6 +100,7 @@ export default function Signup() {
     setSubmitting(true)
     try {
       await signInAnonymously(auth)
+      // guest → KHÔNG tạo user doc, KHÔNG role
       navigate(redirectTo, { replace: true })
     } catch (err) {
       setError(err?.message || 'Anonymous sign-in failed')
@@ -87,12 +115,22 @@ export default function Signup() {
       <div className="muted">Create a new account</div>
 
       <div className="stack" style={{ marginTop: 12 }}>
-        <div className="authProviders" aria-label="Sign up providers">
-          <button className="brandIconButton brandIconButton--google" disabled={submitting} onClick={onContinueWithGoogle} type="button" aria-label="Continue with Google">
+        <div className="authProviders">
+          <button
+            className="brandIconButton brandIconButton--google"
+            disabled={submitting}
+            onClick={onContinueWithGoogle}
+            type="button"
+          >
             G
           </button>
 
-          <button className="brandButton" disabled={submitting} onClick={onContinueAnonymously} type="button">
+          <button
+            className="brandButton"
+            disabled={submitting}
+            onClick={onContinueAnonymously}
+            type="button"
+          >
             Guest
           </button>
         </div>
@@ -105,25 +143,47 @@ export default function Signup() {
       <form onSubmit={onSignupWithEmail} className="stack" style={{ marginTop: 12 }}>
         <label className="field">
           <div className="field__label">Name (optional)</div>
-          <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="input" />
+          <input
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            className="input"
+          />
         </label>
 
         <label className="field">
           <div className="field__label">Email</div>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required className="input" />
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            type="email"
+            required
+            className="input"
+          />
         </label>
 
         <label className="field">
           <div className="field__label">Password</div>
-          <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" required className="input" />
+          <input
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            type="password"
+            required
+            className="input"
+          />
         </label>
 
         <label className="field">
           <div className="field__label">Confirm password</div>
-          <input value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} type="password" required className="input" />
+          <input
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            type="password"
+            required
+            className="input"
+          />
         </label>
 
-        {error ? <div className="error">{error}</div> : null}
+        {error && <div className="error">{error}</div>}
 
         <button disabled={submitting} type="submit" className="btn btn--primary">
           {submitting ? 'Please wait…' : 'Create account'}

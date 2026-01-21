@@ -260,9 +260,9 @@ export default function OverviewPage() {
             </div>
 
             <div className="field" style={{ alignSelf: 'end' }}>
-              <Link className="btn" to="/dashboard/floor">
+              {/* <Link className="btn" to="/dashboard/floor">
                 Browse floor
-              </Link>
+              </Link> */}
             </div>
           </div>
 

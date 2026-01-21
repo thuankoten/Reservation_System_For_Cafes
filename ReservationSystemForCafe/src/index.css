@@ -64,11 +64,13 @@ body {
 }
 
 .leftSidebar__logo {
+
   width: 18px;
   height: 18px;
-  border-radius: 6px;
-  background: #e5e7eb;
+  background-image: url('/src/assets/images/cafe-logo.png');
   opacity: 0.9;
+  background-size: cover;
+  filter: invert(1);
 }
 
 .leftSidebar__name {
@@ -279,6 +281,7 @@ body {
   border: 1px solid #e5e7eb;
   background: white;
   cursor: pointer;
+  text-wrap: nowrap;
 }
 
 .btn:disabled {
@@ -293,7 +296,7 @@ body {
 }
 
 .input {
-  width: 100%;
+  width: 90%;
   padding: 10px;
   border-radius: 12px;
   border: 1px solid #e5e7eb;
@@ -312,7 +315,7 @@ body {
 
 .formGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr auto;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 12px;
   align-items: end;
 }
