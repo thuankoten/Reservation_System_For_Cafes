@@ -1,0 +1,150 @@
+/* Admin Login styles matching customer login */
+
+.ghAuth {
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.ghAuth__header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.ghAuth__logo {
+  display: inline-block;
+  width: 48px;
+  height: 48px;
+  background: #111827;
+  color: white;
+  border-radius: 50%;
+  font-size: 24px;
+  font-weight: bold;
+  line-height: 48px;
+  margin-bottom: 12px;
+}
+
+.ghAuth__title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+.ghAuth__panel {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 24px;
+}
+
+.ghForm {
+  margin-bottom: 20px;
+}
+
+.ghField {
+  display: block;
+  margin-bottom: 16px;
+}
+
+.ghField__label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #555;
+  margin-bottom: 4px;
+}
+
+.ghInput {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 16px;
+  box-sizing: border-box;
+}
+
+.ghInput:focus {
+  outline: none;
+  border-color: #111827;
+}
+
+.error {
+  background: #fee;
+  color: #c33;
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.ghPrimaryButton {
+  width: 100%;
+  padding: 10px 16px;
+  background: #111827;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.ghPrimaryButton:hover:not(:disabled) {
+  background: #0056b3;
+}
+
+.ghPrimaryButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ghDivider {
+  position: relative;
+  margin: 20px 0;
+  text-align: center;
+}
+
+.ghDivider::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: #ddd;
+}
+
+.ghDivider__text {
+  background: white;
+  padding: 0 12px;
+  font-size: 14px;
+  color: #666;
+  position: relative;
+  z-index: 1;
+}
+
+.ghProviders {
+  text-align: center;
+}
+
+.ghProviderButton {
+  padding: 8px 16px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  margin: 4px;
+  transition: border-color 0.2s;
+}
+
+.ghProviderButton:hover:not(:disabled) {
+  border-color: #111827;
+}
+
+.ghProviderButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

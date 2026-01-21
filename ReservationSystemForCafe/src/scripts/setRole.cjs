@@ -8,8 +8,8 @@ admin.initializeApp({
 
 async function setRole(uid, role) {
   await admin.auth().setCustomUserClaims(uid, { role })
-  await admin.firestore().doc(`users/${uid}`).update({role: { role }})
+  await admin.firestore().doc(`users/${uid}`).update({role: role})
   console.log(`Set role = ${role} for uid = ${uid}`)
 }
 
-setRole('cxU1YqeFpfajt8Uhw4LGSkSkncB3', 'system-admin') 
+setRole('tO7XauW7QzQbeWf8SO0cvs3XzC02', 'system-admin') 

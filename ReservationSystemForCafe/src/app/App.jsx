@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import AppLayout from './AppLayout.jsx'
 import AuthPage from '../features/auth/pages/AuthPage.jsx'
 import Login from '../features/auth/pages/Login.jsx'
+import AdminLogin from '../features/auth/pages/AdminLogin.jsx'
 import Signup from '../features/auth/pages/Signup.jsx'
 import ForgotPassword from '../features/auth/pages/ForgotPassword.jsx'
 import DashboardLayout from '../features/dashboard/layout/DashboardLayout.jsx'
@@ -15,6 +16,7 @@ import ReportPage from '../features/dashboard/pages/ReportPage.jsx'
 import AdminDashboardLayout from '../features/admin/layout/AdminDashboardLayout.jsx'
 import AdminTablesPage from '../features/admin/pages/AdminTablesPage.jsx'
 import AdminAccountsPage from '../features/admin/pages/AdminAccountsPage.jsx'
+import RequireAuth from '../features/auth/RequireAuth.jsx'
 
 export default function App() {
   return (
@@ -24,6 +26,7 @@ export default function App() {
 
         <Route path="/auth" element={<AuthPage />}>
           <Route path="login" element={<Login />} />
+          <Route path="admin-login" element={<AdminLogin />} />
           <Route path="signup" element={<Signup />} />
           <Route path="forgot-password" element={<ForgotPassword />} />
         </Route>
@@ -47,7 +50,11 @@ export default function App() {
           <Route index element={<Navigate to="overview" replace />} />
         </Route>
 
-        <Route path="/admin/dashboard" element={<AdminDashboardLayout />}>
+        <Route path="/admin/dashboard" element={
+          <RequireAuth allowedRoles={['admin', 'system-admin']}>
+            <AdminDashboardLayout />
+          </RequireAuth>
+        }>
           <Route path="tables" element={<AdminTablesPage />} />
           <Route index element={<Navigate to="tables" replace />} />
           <Route path="accounts" element={<AdminAccountsPage />} />
