@@ -14,6 +14,7 @@ import InformationPage from '../features/dashboard/pages/InformationPage.jsx'
 import ReportPage from '../features/dashboard/pages/ReportPage.jsx'
 import AdminDashboardLayout from '../features/admin/layout/AdminDashboardLayout.jsx'
 import AdminTablesPage from '../features/admin/pages/AdminTablesPage.jsx'
+import AdminAccountsPage from '../features/admin/pages/AdminAccountsPage.jsx'
 
 export default function App() {
   return (
@@ -49,6 +50,8 @@ export default function App() {
         <Route path="/admin/dashboard" element={<AdminDashboardLayout />}>
           <Route path="tables" element={<AdminTablesPage />} />
           <Route index element={<Navigate to="tables" replace />} />
+          <Route path="accounts" element={<AdminAccountsPage />} />
+          <Route index element={<Navigate to="accounts" replace />} />
         </Route>
 
         <Route path="/admin/*" element={<Navigate to="/admin/dashboard" replace />} />

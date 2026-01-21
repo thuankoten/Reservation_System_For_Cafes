@@ -54,6 +54,8 @@ export default function Login() {
     } finally {
       setSubmitting(false)
     }
+    const token = await auth.currentUser.getIdTokenResult()
+      console.log(token.claims)
   }
 
   async function onContinueAnonymously() {
@@ -139,3 +141,4 @@ export default function Login() {
     </div>
   )
 }
+

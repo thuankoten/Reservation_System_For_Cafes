@@ -62,6 +62,7 @@ Mặc định: http://localhost:5173
 - `/dashboard/reservations`
 
 Trang **Tables** hỗ trợ:
+
 - Tabs: `Table Map`, `Table by Customer`, `TimeLine`
 - Filter: `All`, `Free`, `Reserved`, `Occupied`
 - Nút **Seed demo tables** để tạo dữ liệu mẫu `tables` (T01..T20) (cần Firestore rules cho phép write)
@@ -72,6 +73,7 @@ Trang **Tables** hỗ trợ:
 - `/admin/dashboard/tables`
 
 Trang **Admin • Tables** hỗ trợ:
+
 - Thêm bàn mới
 - Sửa `number`, `seats`, `status`
 - Xoá bàn

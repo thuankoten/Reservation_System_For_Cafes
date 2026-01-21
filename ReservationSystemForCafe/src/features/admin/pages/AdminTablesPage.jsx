@@ -307,10 +307,10 @@ export default function AdminTablesPage() {
                   <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                     {!isEditing ? (
                       <>
-                        <button className="btn" onClick={() => beginEdit(r)}>
+                        <button className="btn edit-btn" onClick={() => beginEdit(r)}>
                           Edit
                         </button>
-                        <button className="btn" disabled={deletingId === r.id} onClick={() => removeTable(r.id)}>
+                        <button className="btn delete-btn" disabled={deletingId === r.id} onClick={() => removeTable(r.id)}>
                           {deletingId === r.id ? 'Deleting…' : 'Delete'}
                         </button>
                       </>

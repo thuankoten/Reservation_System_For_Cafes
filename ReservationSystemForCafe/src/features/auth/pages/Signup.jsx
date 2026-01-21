@@ -33,7 +33,7 @@ export default function Signup() {
     if (user) navigate(redirectTo, { replace: true })
   }, [navigate, redirectTo, user])
 
-  // 🔹 tạo user trong Firestore + role mặc định
+  // tạo user 
   async function createUserIfNotExists(user) {
     if (!user || user.isAnonymous) return
 
@@ -43,9 +43,10 @@ export default function Signup() {
     if (!snap.exists()) {
       await setDoc(ref, {
         uid: user.uid,
-        email: user.email || null,
-        displayName: user.displayName || null,
+        email: user.email,
+        displayName: user.displayName,
         role: 'customer',
+        status: 'active',
         provider: user.providerData?.[0]?.providerId || 'password',
         createdAt: serverTimestamp(),
       })
@@ -100,7 +101,6 @@ export default function Signup() {
     setSubmitting(true)
     try {
       await signInAnonymously(auth)
-      // guest → KHÔNG tạo user doc, KHÔNG role
       navigate(redirectTo, { replace: true })
     } catch (err) {
       setError(err?.message || 'Anonymous sign-in failed')
