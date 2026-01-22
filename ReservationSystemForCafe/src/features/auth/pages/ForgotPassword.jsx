@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { sendPasswordResetEmail } from 'firebase/auth'
 import { auth } from '../../../shared/firebase'
-import { useAuth } from '../AuthContext.jsx'
+import { useAuth } from '../useAuth'
 
 export default function ForgotPassword() {
   const navigate = useNavigate()

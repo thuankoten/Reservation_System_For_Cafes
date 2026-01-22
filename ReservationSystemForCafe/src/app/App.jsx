@@ -15,6 +15,7 @@ import InformationPage from '../features/dashboard/pages/InformationPage.jsx'
 import ReportPage from '../features/dashboard/pages/ReportPage.jsx'
 import AdminDashboardLayout from '../features/admin/layout/AdminDashboardLayout.jsx'
 import AdminTablesPage from '../features/admin/pages/AdminTablesPage.jsx'
+import AdminCreateTablePage from '../features/admin/pages/AdminCreateTablePage.jsx'
 import AdminAccountsPage from '../features/admin/pages/AdminAccountsPage.jsx'
 import RequireAuth from '../features/auth/RequireAuth.jsx'
 
@@ -56,9 +57,9 @@ export default function App() {
           </RequireAuth>
         }>
           <Route path="tables" element={<AdminTablesPage />} />
+          <Route path="tables/new" element={<AdminCreateTablePage />} />
           <Route index element={<Navigate to="tables" replace />} />
           <Route path="accounts" element={<AdminAccountsPage />} />
-          <Route index element={<Navigate to="accounts" replace />} />
         </Route>
 
         <Route path="/admin/*" element={<Navigate to="/admin/dashboard" replace />} />

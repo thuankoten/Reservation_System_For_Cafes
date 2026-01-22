@@ -7,7 +7,8 @@ import {
   signInWithPopup,
 } from 'firebase/auth'
 import { auth } from '../../../shared/firebase'
-import { useAuth } from '../AuthContext.jsx'
+import { useAuth } from '../useAuth'
+import cafeLogo from '../../../assets/images/cafe-logo.png'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -74,9 +75,14 @@ export default function Login() {
   return (
     <div className="ghAuth">
       <div className="ghAuth__header">
-        <div className="ghAuth__logo" aria-hidden="true">
-          C
-        </div>
+        <button
+          type="button"
+          className="ghAuth__logo"
+          aria-label="Go to dashboard"
+          onClick={() => navigate('/dashboard/overview')}
+        >
+          <img className="ghAuth__logoImg" src={cafeLogo} alt="" />
+        </button>
         <h1 className="ghAuth__title">Sign in to Cafe</h1>
       </div>
 
@@ -128,6 +134,14 @@ export default function Login() {
           </button>
           <button className="ghProviderButton" disabled={submitting} onClick={onContinueAnonymously} type="button">
             Continue as Guest
+          </button>
+          <button
+            className="ghProviderButton"
+            disabled={submitting}
+            onClick={() => navigate('/auth/admin-login')}
+            type="button"
+          >
+            Continue as Admin
           </button>
         </div>
       </div>

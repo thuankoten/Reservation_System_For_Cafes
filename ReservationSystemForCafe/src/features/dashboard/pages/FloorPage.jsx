@@ -1,24 +1,30 @@
 import { useEffect, useState } from 'react'
 import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore'
+import { useNavigate } from 'react-router-dom'
 import { db } from '../../../shared/firebase'
-import { useAuth } from '../../auth/AuthContext.jsx'
+import { useAuth } from '../../auth/useAuth'
 
 export default function FloorPage() {
   useAuth()
+  const navigate = useNavigate()
   const [tables, setTables] = useState([])
   const [activeView, setActiveView] = useState('map')
   const [activeStatus, setActiveStatus] = useState('all')
   const [activeFloor, setActiveFloor] = useState(1)
+  const [selectedTableId, setSelectedTableId] = useState('')
+  const [imageViewerOpen, setImageViewerOpen] = useState(false)
+  const [imageViewerSrc, setImageViewerSrc] = useState('')
+  const [imageViewerZoom, setImageViewerZoom] = useState(1)
   const [error, setError] = useState('')
   const [reservations, setReservations] = useState([])
   const [reservationsError, setReservationsError] = useState('')
 
   useEffect(() => {
-    setError('')
     const qTables = query(collection(db, 'tables'), orderBy('number', 'asc'))
     const unsub = onSnapshot(
       qTables,
       (snap) => {
+        setError('')
         setTables(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
       },
       (e) => setError(e?.message || 'Failed to load tables')
@@ -28,11 +34,11 @@ export default function FloorPage() {
   }, [])
 
   useEffect(() => {
-    setReservationsError('')
     const q = query(collection(db, 'reservations'), orderBy('createdAt', 'desc'), limit(100))
     const unsub = onSnapshot(
       q,
       (snap) => {
+        setReservationsError('')
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
         setReservations(rows)
       },
@@ -126,20 +132,54 @@ export default function FloorPage() {
   })()
   const mapRows = Math.max(1, Math.ceil(mapCount / mapCols))
 
-  const filteredReservations = activeReservations.filter((r) => {
+  const selectedTableIdForView = (() => {
+    if (!selectedTableId) return ''
+    return mapTables.some((t) => t.id === selectedTableId) ? selectedTableId : ''
+  })()
+
+  const selectedTable = selectedTableIdForView ? mapTables.find((t) => t.id === selectedTableIdForView) || null : null
+  const selectedReservation = selectedTableIdForView ? reservationByTableId.get(selectedTableIdForView) || null : null
+
+  const statusSymbol = (s) => {
+    if (s === 'free') return '✓'
+    if (s === 'reserved') return '⌛'
+    if (s === 'occupied') return '●'
+    return '•'
+  }
+
+  const placementLabel = (v) => {
+    const key = String(v || '').trim()
+    if (!key) return '—'
+    if (key === 'quiet_zone') return 'Quiet Zone'
+    if (key === 'window_seat') return 'Window Seat'
+    if (key === 'near_power_outlets') return 'Near power outlets'
+    return key
+  }
+
+  const openImageViewer = (src) => {
+    if (!src) return
+    setImageViewerSrc(src)
+    setImageViewerZoom(1)
+    setImageViewerOpen(true)
+  }
+
+  const closeImageViewer = () => {
+    setImageViewerOpen(false)
+    setImageViewerSrc('')
+    setImageViewerZoom(1)
+  }
+
+  const filteredReservations = activeReservations.filter(() => {
     if (activeStatus === 'all') return true
     if (activeStatus === 'reserved') return true
     return false
   })
 
-  const groupedByCustomer = filteredReservations.reduce((acc, r) => {
-    const key = r.userEmail || r.userId || 'Guest'
-    if (!acc[key]) acc[key] = []
-    acc[key].push(r)
-    return acc
-  }, {})
-
-  const customerKeys = Object.keys(groupedByCustomer).sort((a, b) => a.localeCompare(b))
+  const timelineReservations = filteredReservations.filter((r) => {
+    const t = tables.find((x) => x.id === r.tableId)
+    if (!t) return false
+    return floorIdForTable(t) === activeFloor
+  })
 
   return (
     <div className={activeView === 'map' ? 'card tablesCard tablesCard--map' : 'card'}>
@@ -151,13 +191,6 @@ export default function FloorPage() {
             onClick={() => setActiveView('map')}
           >
             Table Map
-          </button>
-          <button
-            type="button"
-            className={`tabBtn ${activeView === 'byCustomer' ? 'tabBtn--active' : ''}`}
-            onClick={() => setActiveView('byCustomer')}
-          >
-            Table by Customer
           </button>
           <button
             type="button"
@@ -176,6 +209,28 @@ export default function FloorPage() {
 
       {error ? <div className="error" style={{ marginTop: 12 }}>{error}</div> : null}
       {reservationsError ? <div className="error" style={{ marginTop: 12 }}>{reservationsError}</div> : null}
+
+      {(activeView === 'map' || activeView === 'timeline') ? (
+        <div className="floorSelectorRow" role="navigation" aria-label="Floor selector">
+          {[1, 2, 3].map((id) => {
+            const label = id === 1 ? '1st Floor' : id === 2 ? '2nd Floor' : '3rd Floor'
+            const isActive = activeFloor === id
+            return (
+              <button
+                key={id}
+                type="button"
+                className={`tabBtn ${isActive ? 'tabBtn--active' : ''}`}
+                onClick={() => {
+                  setSelectedTableId('')
+                  setActiveFloor(id)
+                }}
+              >
+                {label}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
 
       <div className="tablesFilters" aria-label="Tables status filter">
         <button
@@ -216,75 +271,177 @@ export default function FloorPage() {
               role="region"
               aria-label="Floor plan"
               style={{ '--cols': mapCols, '--rows': mapRows }}
+              onClick={(e) => {
+                if (e.target === e.currentTarget) setSelectedTableId('')
+              }}
             >
               {mapTables.map((t) => {
                 const status = normalizedStatus(t.status)
                 const hasReservation = reservationByTableId.has(t.id)
                 const effectiveStatus = hasReservation ? 'reserved' : status
-                return (
-                  <div key={t.id} className={`tableTile tableTile--${effectiveStatus}`}>
-                    <div className="tableTile__number">{t.number}</div>
-                    <div className="tableTile__meta">Seats {t.seats || '?'}</div>
-                    <div className={`tableTile__status tableTile__status--${effectiveStatus}`}>{effectiveStatus}</div>
-                  </div>
-                )
-              })}
-            </div>
-
-            <div className="floorSelector" role="navigation" aria-label="Floor selector">
-              {[1, 2, 3].map((id) => {
-                const label = id === 1 ? '1st Floor' : id === 2 ? '2nd Floor' : '3rd Floor'
-                const isActive = activeFloor === id
+                const isActive = t.id === selectedTableId
                 return (
                   <button
-                    key={id}
+                    key={t.id}
                     type="button"
-                    className={`floorCard ${isActive ? 'floorCard--active' : ''}`}
-                    onClick={() => setActiveFloor(id)}
+                    className={`tableItem ${isActive ? 'tableItem--active' : ''}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setSelectedTableId(t.id)
+                    }}
                   >
-                    <div className="floorCard__label">{label}</div>
-                    <div className="floorCard__thumb" aria-hidden="true">
-                      <span className="floorCard__bar" />
-                      <span className="floorCard__bar" />
-                      <span className="floorCard__bar" />
-                      <span className="floorCard__bar" />
-                      <span className="floorCard__bar" />
-                      <span className="floorCard__bar" />
+                    <div className={`tableSquare tableSquare--${effectiveStatus}`}>
+                      <div className={`tableSquare__icon tableSquare__icon--${effectiveStatus}`}>
+                        <span className="tableSquare__symbol">{statusSymbol(effectiveStatus)}</span>
+                      </div>
+                      <div className={`tableSquare__status tableSquare__status--${effectiveStatus}`}>{effectiveStatus}</div>
                     </div>
+                    <div className="tableNumber">{t.number}</div>
                   </button>
                 )
               })}
             </div>
+
+            {selectedTableId ? (
+              <aside className="tablesAside" aria-label="Table details">
+                <section className="reservationPanel" aria-label="Reservation Details">
+                  <header className="reservationPanel__header">
+                    <div>
+                      <div className="reservationPanel__title">Reservation Details</div>
+                      <div className="reservationPanel__subtitle">Selected table information</div>
+                    </div>
+
+                    <div className="reservationPanel__actions">
+                      <button
+                        type="button"
+                        className="detailsCollapseBtn"
+                        aria-label="Collapse Reservation Details"
+                        onClick={() => setSelectedTableId('')}
+                      >
+                        →
+                      </button>
+                      <button
+                        type="button"
+                        className="brandButton"
+                        disabled={!selectedTableId}
+                        onClick={() =>
+                          selectedTableId && navigate(`/dashboard/reservations?tableId=${encodeURIComponent(selectedTableId)}`)
+                        }
+                      >
+                        Reserve
+                      </button>
+                    </div>
+                  </header>
+
+                  {!selectedTable ? (
+                    <div className="reservationPanel__empty">Select a table to view details.</div>
+                  ) : (
+                    <div className="reservationPanel__body">
+                      <div className="kv">
+                        <div className="kv__row">
+                          <div className="kv__k">Table</div>
+                          <div className="kv__v">{selectedTable.number}</div>
+                        </div>
+                        <div className="kv__row">
+                          <div className="kv__k">Floor</div>
+                          <div className="kv__v">{selectedTable.floor || floorIdForTable(selectedTable)}</div>
+                        </div>
+                        <div className="kv__row">
+                          <div className="kv__k">Seats</div>
+                          <div className="kv__v">{selectedTable.seats || '—'}</div>
+                        </div>
+                        <div className="kv__row">
+                          <div className="kv__k">Status</div>
+                          <div className="kv__v">
+                            <span className={`badge badge--neutral`}>{String(selectedReservation ? 'reserved' : normalizedStatus(selectedTable.status)).toUpperCase()}</span>
+                          </div>
+                        </div>
+                        <div className="kv__row">
+                          <div className="kv__k">Placement</div>
+                          <div className="kv__v">{placementLabel(selectedTable.placement)}</div>
+                        </div>
+                      </div>
+
+                      {selectedTable.imageUrl ? (
+                        <button
+                          type="button"
+                          className="reservationPanel__thumbBtn"
+                          onClick={() => openImageViewer(selectedTable.imageUrl)}
+                          aria-label="View table image"
+                        >
+                          <img className="reservationPanel__thumb" src={selectedTable.imageUrl} alt="" loading="lazy" />
+                        </button>
+                      ) : (
+                        <div className="muted" style={{ marginTop: 12 }}>
+                          No image.
+                        </div>
+                      )}
+
+                      {selectedReservation ? (
+                        <div className="rowCard" style={{ marginTop: 12 }}>
+                          <div>
+                            <div className="rowCard__title">Active reservation</div>
+                            <div className="muted">Customer: {selectedReservation.userEmail || selectedReservation.userId || 'Guest'}</div>
+                            <div className="muted">Party: {selectedReservation.partySize || '—'}</div>
+                            <div className="muted">Start: {formatTime(selectedReservation.startTimeDate)}</div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center' }}>
+                            <span className="badge badge--success">active</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="muted" style={{ marginTop: 12 }}>
+                          No active reservations for this table.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </section>
+              </aside>
+            ) : null}
           </div>
         ) : null}
 
-        {activeView === 'byCustomer' ? (
-          <div className="tablesSection" style={{ gridColumn: '1 / -1' }}>
-            <div className="tablesSection__title">Table by Customer</div>
-            {customerKeys.length === 0 ? <div className="muted">No active reservations.</div> : null}
-            <div className="stack" style={{ marginTop: 12 }}>
-              {customerKeys.map((key) => (
-                <div key={key} className="rowCard">
-                  <div>
-                    <div className="rowCard__title">{key}</div>
-                    <div className="muted">Active reservations: {groupedByCustomer[key].length}</div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                    {groupedByCustomer[key]
-                      .slice()
-                      .sort((a, b) => (a.startTimeDate?.getTime?.() || 0) - (b.startTimeDate?.getTime?.() || 0))
-                      .map((r) => {
-                        const t = tables.find((x) => x.id === r.tableId)
-                        const label = t?.number ? `Table ${t.number}` : `TableId ${r.tableId}`
-                        return (
-                          <span key={r.id} className="badge badge--neutral">
-                            {label} • {formatTime(r.startTimeDate)}
-                          </span>
-                        )
-                      })}
-                  </div>
-                </div>
-              ))}
+        {imageViewerOpen && imageViewerSrc ? (
+          <div
+            className="imageModal"
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) closeImageViewer()
+            }}
+          >
+            <div className="imageModal__dialog">
+              <button type="button" className="imageModal__close" aria-label="Close" onClick={closeImageViewer}>
+                ×
+              </button>
+
+              <div className="imageModal__controls" aria-label="Image zoom controls">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setImageViewerZoom((z) => Math.max(0.5, Math.round((z - 0.25) * 100) / 100))}
+                >
+                  -
+                </button>
+                <div className="muted" style={{ minWidth: 56, textAlign: 'center' }}>{Math.round(imageViewerZoom * 100)}%</div>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setImageViewerZoom((z) => Math.min(3, Math.round((z + 0.25) * 100) / 100))}
+                >
+                  +
+                </button>
+              </div>
+
+              <div className="imageModal__imgWrap">
+                <img
+                  className="imageModal__img"
+                  src={imageViewerSrc}
+                  alt=""
+                  style={{ transform: `scale(${imageViewerZoom})` }}
+                />
+              </div>
             </div>
           </div>
         ) : null}
@@ -292,9 +449,9 @@ export default function FloorPage() {
         {activeView === 'timeline' ? (
           <div className="tablesSection" style={{ gridColumn: '1 / -1' }}>
             <div className="tablesSection__title">TimeLine</div>
-            {filteredReservations.length === 0 ? <div className="muted">No active reservations.</div> : null}
+            {timelineReservations.length === 0 ? <div className="muted">No active reservations.</div> : null}
             <div className="stack" style={{ marginTop: 12 }}>
-              {filteredReservations
+              {timelineReservations
                 .slice()
                 .sort((a, b) => (a.startTimeDate?.getTime?.() || 0) - (b.startTimeDate?.getTime?.() || 0))
                 .map((r) => {

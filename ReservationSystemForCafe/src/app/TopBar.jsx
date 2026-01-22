@@ -1,7 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
 import { auth } from '../shared/firebase'
-import { useAuth } from '../features/auth/AuthContext.jsx'
+import { useAuth } from '../features/auth/useAuth'
 
 function TopLink({ to, children }) {
   const location = useLocation()

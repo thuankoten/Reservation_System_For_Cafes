@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
+import { getStorage } from 'firebase/storage'
 
 function readEnv(name) {
   const v = import.meta.env[name]
@@ -19,7 +20,7 @@ const firebaseConfig = {
 if (import.meta.env.DEV) {
   const key = firebaseConfig.apiKey
   const keyPreview = typeof key === 'string' ? `${key.slice(0, 6)}...${key.slice(-4)}` : String(key)
-  // eslint-disable-next-line no-console
+  // DEV env check
   console.info('[firebase] env check', {
     apiKey: keyPreview,
     authDomain: firebaseConfig.authDomain,
@@ -36,3 +37,4 @@ if (missing.length > 0) {
 export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
 export const db = getFirestore(app)
+export const storage = getStorage(app)

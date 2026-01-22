@@ -1,7 +1,7 @@
 import { Link, NavLink } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
 import { auth } from '../firebase'
-import { useAuth } from '../../features/auth/AuthContext.jsx'
+import { useAuth } from '../../features/auth/useAuth'
 
 function SideItem({ to, label, badge }) {
   return (

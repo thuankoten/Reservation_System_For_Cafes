@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { signInWithEmailAndPassword, signOut, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
 import { auth } from '../../../shared/firebase'
 import { getUserById } from '../../../shared/services/users'
+import cafeLogo from '../../../assets/images/cafe-logo.png'
 
 export default function AdminLogin() {
   const navigate = useNavigate()
@@ -58,9 +59,14 @@ export default function AdminLogin() {
   return (
     <div className="ghAuth">
       <div className="ghAuth__header">
-        <div className="ghAuth__logo" aria-hidden="true">
-          A
-        </div>
+        <button
+          type="button"
+          className="ghAuth__logo"
+          aria-label="Go to dashboard"
+          onClick={() => navigate('/dashboard/overview')}
+        >
+          <img className="ghAuth__logoImg" src={cafeLogo} alt="" />
+        </button>
         <h1 className="ghAuth__title">Admin Sign In</h1>
       </div>
 

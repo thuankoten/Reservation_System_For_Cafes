@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth } from '../../../shared/firebase'
 import {
@@ -22,29 +22,7 @@ export default function AdminAccountsPage() {
   const [error, setError] = useState('')
   const [processingId, setProcessingId] = useState('')
 
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        setCurrentUser(user)
-        // Get user role from Firestore
-        const userDoc = await getUserById(user.uid)
-        setCurrentUserRole(userDoc?.role || '')
-      } else {
-        setCurrentUser(null)
-        setCurrentUserRole('')
-      }
-    })
-
-    return unsub
-  }, [])
-
-  useEffect(() => {
-    if (currentUserRole) {
-      loadUsers()
-    }
-  }, [currentUserRole])
-
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     try {
       setLoading(true)
       setError('')
@@ -66,7 +44,29 @@ export default function AdminAccountsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [currentUserRole])
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        setCurrentUser(user)
+        // Get user role from Firestore
+        const userDoc = await getUserById(user.uid)
+        setCurrentUserRole(userDoc?.role || '')
+      } else {
+        setCurrentUser(null)
+        setCurrentUserRole('')
+      }
+    })
+
+    return unsub
+  }, [])
+
+  useEffect(() => {
+    if (currentUserRole) {
+      loadUsers()
+    }
+  }, [currentUserRole, loadUsers])
 
   const handleToggleStatus = async (userId) => {
     try {

@@ -39,7 +39,7 @@ body {
 
 .dashboardShell__content {
   padding: 16px;
-  min-height: 100vh;
+  min-height: 0;
   overflow: visible;
 }
 
@@ -53,6 +53,7 @@ body {
   position: sticky;
   top: 0;
   height: 100vh;
+  box-sizing: border-box;
   overflow: hidden;
 }
 
@@ -88,8 +89,7 @@ body {
 
 .leftSidebar__bottom {
   margin-top: auto;
-  padding: 10px 6px 34px;
-  flex: 0 0 auto;
+  padding: 10px 6px;
 }
 
 .leftSidebar__actions {
@@ -537,7 +537,9 @@ body {
  }
 
  .tablesCard--map {
-   height: calc(100vh - 32px);
+   box-sizing: border-box;
+   height: calc(100vh - 56px - 32px + 50px);
+   max-height: calc(100vh - 56px - 32px + 50px);
    overflow: hidden;
    display: flex;
    flex-direction: column;
@@ -559,6 +561,34 @@ body {
    align-items: start;
  }
 
+ .tablesAside {
+   position: fixed;
+   top: 16px;
+   right: 16px;
+   width: clamp(320px, 26vw, 420px);
+   display: grid;
+   gap: 14px;
+   z-index: 6;
+   animation: reservationDetailsIn 220ms ease-in;
+ }
+
+ @keyframes reservationDetailsIn {
+   from {
+     transform: translateX(18px);
+     opacity: 0;
+   }
+   to {
+     transform: translateX(0);
+     opacity: 1;
+   }
+ }
+
+ @media (prefers-reduced-motion: reduce) {
+   .tablesAside {
+     animation: none;
+   }
+ }
+
  .floorPlan {
    min-height: 0;
    border-radius: 18px;
@@ -566,26 +596,302 @@ body {
    background: #f9fafb;
    display: grid;
    grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
-   grid-template-rows: repeat(var(--rows, 2), minmax(0, 1fr));
-   gap: 18px;
+   grid-auto-rows: 180px;
+   gap: 16px;
    padding: 18px;
-   padding-right: 196px;
-   height: 100%;
+   padding-right: var(--padRight, 18px);
+   height: auto;
  }
+
+ .reservationPanel__actions {
+   display: flex;
+   align-items: center;
+   gap: 10px;
+ }
+
+ .detailsCollapseBtn {
+   width: 44px;
+   height: 44px;
+   border-radius: 12px;
+   border: 1px solid #e5e7eb;
+   background: #ffffff;
+   color: #111827;
+   font-weight: 900;
+   cursor: pointer;
+ }
+
+ .detailsCollapseBtn:hover {
+   background: #f3f4f6;
+ }
+
+
+ .floorSelectorRow {
+   display: flex;
+   gap: 12px;
+   flex-wrap: wrap;
+   margin-top: 12px;
+ }
+
+ .tableItem {
+   appearance: none;
+   border: 0;
+   background: transparent;
+   padding: 0;
+   display: grid;
+   grid-template-rows: minmax(0, 1fr) auto;
+   gap: 10px;
+   justify-items: center;
+   align-items: center;
+   width: 100%;
+   height: 100%;
+   cursor: pointer;
+ }
+
+ .tableItem:focus-visible {
+   outline: 2px solid rgba(99, 102, 241, 0.45);
+   outline-offset: 6px;
+   border-radius: 18px;
+ }
+
+ .tableSquare {
+   height: 100%;
+   width: auto;
+   max-width: 100%;
+   aspect-ratio: 1 / 1;
+   border-radius: 18px;
+   border: 1px solid rgba(17, 24, 39, 0.1);
+   background: linear-gradient(180deg, #ffffff, #fbfbfc);
+   box-shadow: 0 10px 22px rgba(17, 24, 39, 0.06);
+   position: relative;
+   display: grid;
+   place-items: center;
+   transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+ }
+
+ .tableSquare__icon {
+   width: 56px;
+   height: 56px;
+   border-radius: 999px;
+   display: grid;
+   place-items: center;
+   font-weight: 900;
+   border: 1px solid rgba(17, 24, 39, 0.12);
+ }
+
+ .tableSquare__symbol {
+   font-size: 20px;
+   line-height: 1;
+ }
+
+ .tableSquare__status {
+   position: absolute;
+   bottom: 10px;
+   left: 12px;
+   right: 12px;
+   height: 26px;
+   border-radius: 999px;
+   display: inline-flex;
+   align-items: center;
+   justify-content: center;
+   font-size: 11px;
+   font-weight: 900;
+   text-transform: uppercase;
+   letter-spacing: 0.08em;
+   border: 1px solid rgba(17, 24, 39, 0.1);
+ }
+
+ .tableSquare--free {
+   border-color: rgba(16, 185, 129, 0.25);
+ }
+
+ .tableSquare__icon--free {
+   background: rgba(16, 185, 129, 0.12);
+   border-color: rgba(16, 185, 129, 0.22);
+   color: #065f46;
+ }
+
+ .tableSquare__status--free {
+   background: rgba(16, 185, 129, 0.12);
+   border-color: rgba(16, 185, 129, 0.22);
+   color: #065f46;
+ }
+
+ .tableSquare--reserved {
+   border-color: rgba(245, 158, 11, 0.25);
+ }
+
+ .tableSquare__icon--reserved {
+   background: rgba(245, 158, 11, 0.12);
+   border-color: rgba(245, 158, 11, 0.22);
+   color: #92400e;
+ }
+
+ .tableSquare__status--reserved {
+   background: rgba(245, 158, 11, 0.12);
+   border-color: rgba(245, 158, 11, 0.22);
+   color: #92400e;
+ }
+
+ .tableSquare--occupied {
+   border-color: rgba(99, 102, 241, 0.28);
+ }
+
+ .tableSquare__icon--occupied {
+   background: rgba(99, 102, 241, 0.14);
+   border-color: rgba(99, 102, 241, 0.26);
+   color: #3730a3;
+ }
+
+ .tableSquare__status--occupied {
+   background: rgba(99, 102, 241, 0.14);
+   border-color: rgba(99, 102, 241, 0.26);
+   color: #3730a3;
+ }
+
+ .tableItem:hover .tableSquare {
+   border-color: rgba(17, 24, 39, 0.18);
+   box-shadow: 0 18px 36px rgba(17, 24, 39, 0.12);
+   transform: translateY(-3px);
+ }
+
+ .tableItem--active .tableSquare {
+   border-color: rgba(99, 102, 241, 0.55);
+   box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.16), 0 18px 36px rgba(17, 24, 39, 0.12);
+ }
+
+ .tableNumber {
+   font-weight: 800;
+   color: rgba(15, 23, 42, 0.6);
+   font-size: 12px;
+   line-height: 1;
+ }
+
+ .reservationPanel {
+   border: 1px solid rgba(17, 24, 39, 0.08);
+   border-radius: 16px;
+   background: rgba(255, 255, 255, 0.92);
+   box-shadow: 0 18px 40px rgba(17, 24, 39, 0.12);
+   backdrop-filter: blur(10px);
+   padding: 14px;
+ }
+
+ .reservationPanel__header {
+   display: flex;
+   align-items: flex-start;
+   justify-content: space-between;
+   gap: 12px;
+ }
+
+ .reservationPanel__title {
+   font-weight: 900;
+   color: #0f172a;
+ }
+
+ .reservationPanel__subtitle {
+   color: rgba(15, 23, 42, 0.6);
+   font-size: 13px;
+   margin-top: 2px;
+ }
+
+ .reservationPanel__empty {
+   margin-top: 12px;
+   color: rgba(15, 23, 42, 0.6);
+   font-size: 14px;
+ }
+
+ .reservationPanel__body {
+   margin-top: 12px;
+ }
+
+ .reservationPanel__thumbBtn {
+   margin-top: 12px;
+   width: 100%;
+   border: 1px solid rgba(17, 24, 39, 0.12);
+   border-radius: 14px;
+   padding: 0;
+   overflow: hidden;
+   background: #ffffff;
+   cursor: pointer;
+ }
+
+ .reservationPanel__thumb {
+   width: 100%;
+   height: 160px;
+   object-fit: cover;
+   display: block;
+ }
+
+ .imageModal {
+   position: fixed;
+   inset: 0;
+   background: rgba(15, 23, 42, 0.72);
+   display: grid;
+   place-items: center;
+   padding: 18px;
+   z-index: 50;
+ }
+
+ .imageModal__dialog {
+   width: min(980px, 100%);
+   height: min(78vh, 720px);
+   background: #0b1220;
+   border-radius: 16px;
+   border: 1px solid rgba(255, 255, 255, 0.1);
+   position: relative;
+   display: grid;
+   grid-template-rows: auto minmax(0, 1fr);
+ }
+
+ .imageModal__close {
+   position: absolute;
+   top: 10px;
+   right: 10px;
+   width: 40px;
+   height: 40px;
+   border-radius: 12px;
+   border: 1px solid rgba(255, 255, 255, 0.18);
+   background: rgba(15, 23, 42, 0.4);
+   color: #ffffff;
+   font-size: 22px;
+   line-height: 1;
+   cursor: pointer;
+ }
+
+ .imageModal__controls {
+   padding: 12px;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   gap: 10px;
+ }
+
+ .imageModal__controls .btn {
+   background: rgba(255, 255, 255, 0.08);
+   border-color: rgba(255, 255, 255, 0.14);
+   color: #ffffff;
+ }
+
+ .imageModal__imgWrap {
+   overflow: auto;
+   display: grid;
+   place-items: center;
+   padding: 12px;
+ }
+
+ .imageModal__img {
+   max-width: 100%;
+   max-height: 100%;
+   transform-origin: center;
+   transition: transform 120ms ease;
+ }
+
 
  .floorSelector {
    display: grid;
    gap: 12px;
    align-content: start;
    justify-items: stretch;
-   width: 160px;
-   position: fixed;
-   top: 32px;
-   right: 32px;
-   z-index: 5;
-   height: fit-content;
-   max-height: calc(100vh - 64px);
-   overflow: auto;
+   width: 100%;
  }
 
  .floorCard {
@@ -782,12 +1088,23 @@ body {
    width: 48px;
    height: 48px;
    border-radius: 999px;
+   border: 0;
+   padding: 0;
    background: #111827;
    color: #ffffff;
    display: grid;
    place-items: center;
    font-weight: 900;
    letter-spacing: 0.02em;
+   cursor: pointer;
+ }
+
+ .ghAuth__logoImg {
+   width: 28px;
+   height: 28px;
+   object-fit: contain;
+   display: block;
+   filter: invert(1);
  }
 
  .ghAuth__title {
@@ -992,8 +1309,21 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .tablesCard--map {
+    height: auto;
+    overflow: visible;
+  }
+
+  .tablesAside {
+    position: static;
+    width: 100%;
+  }
+
   .floorPlan {
-    padding-right: 28px;
+    padding-right: 18px;
+    height: auto;
+    grid-template-rows: none;
+    grid-auto-rows: auto;
   }
 
   .floorSelector {

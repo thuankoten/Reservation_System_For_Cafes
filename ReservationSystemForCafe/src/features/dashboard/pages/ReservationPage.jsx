@@ -7,8 +7,9 @@ import {
   where,
 } from 'firebase/firestore'
 import { signInAnonymously } from 'firebase/auth'
+import { useSearchParams } from 'react-router-dom'
 import { auth, db } from '../../../shared/firebase'
-import { useAuth } from '../../auth/AuthContext.jsx'
+import { useAuth } from '../../auth/useAuth'
 import { cancelReservation, createHoldReservation } from '../../../shared/services/reservations'
 import { calculateTotalAmount } from '../../../shared/utils/pricing'
 import {
@@ -61,6 +62,8 @@ function getDefaultStartMinutes({ isoDate, durationMinutes }) {
 
 export default function ReservationPage() {
   const { user } = useAuth()
+  const [searchParams] = useSearchParams()
+  const [initialTableId] = useState(() => searchParams.get('tableId') || '')
   const [tables, setTables] = useState([])
   const [myReservations, setMyReservations] = useState([])
 
@@ -74,8 +77,10 @@ export default function ReservationPage() {
   )
 
   const [customerName, setCustomerName] = useState('')
+  const [customerNameTouched, setCustomerNameTouched] = useState(false)
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerEmail, setCustomerEmail] = useState('')
+  const [customerEmailTouched, setCustomerEmailTouched] = useState(false)
 
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -87,16 +92,19 @@ export default function ReservationPage() {
       (snap) => {
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
         setTables(rows)
-        if (!selectedTableId) {
+
+        setSelectedTableId((prev) => {
+          if (prev && rows.some((t) => t.id === prev)) return prev
+          if (initialTableId && rows.some((t) => t.id === initialTableId)) return initialTableId
           const firstAvailable = rows.find((t) => (t.status || 'available') === 'available')
-          if (firstAvailable) setSelectedTableId(firstAvailable.id)
-        }
+          return firstAvailable ? firstAvailable.id : ''
+        })
       },
       (e) => setError(e?.message || 'Failed to load tables')
     )
 
     return () => unsub()
-  }, [selectedTableId])
+  }, [initialTableId])
 
   useEffect(() => {
     if (!user?.uid) return
@@ -116,12 +124,8 @@ export default function ReservationPage() {
     return () => unsub()
   }, [user?.uid])
 
-  useEffect(() => {
-    if (!user) return
-
-    if (!customerName && user.displayName) setCustomerName(user.displayName)
-    if (!customerEmail && user.email) setCustomerEmail(user.email)
-  }, [user, customerEmail, customerName])
+  const customerNameValue = customerNameTouched ? customerName : (user?.displayName || customerName)
+  const customerEmailValue = user?.email ? user.email : (customerEmailTouched ? customerEmail : customerEmail)
 
   const availableTables = useMemo(
     () => tables.filter((t) => (t.status || 'available') === 'available'),
@@ -143,21 +147,26 @@ export default function ReservationPage() {
     [durationMinutes]
   )
 
-  useEffect(() => {
-    setDurationMinutes((prev) => clampDurationMinutes(prev))
-  }, [])
+  function onChangeDate(nextIso) {
+    setIsoDate(nextIso)
+    setStartMinutes(getDefaultStartMinutes({ isoDate: nextIso, durationMinutes }))
+  }
 
-  useEffect(() => {
-    // Ensure current startMinutes is valid after changing date/duration
-    const opts = listStartMinutesForDuration({ durationMinutes: Number(durationMinutes) })
+  function onChangeDuration(next) {
+    const nextDur = clampDurationMinutes(next)
+    setDurationMinutes(nextDur)
+
+    const opts = listStartMinutesForDuration({ durationMinutes: Number(nextDur) })
     if (!opts.length) {
       setStartMinutes(TIMELINE_CONFIG.openMinutes)
       return
     }
-    if (!opts.includes(startMinutes)) {
-      setStartMinutes(getDefaultStartMinutes({ isoDate, durationMinutes }))
-    }
-  }, [durationMinutes, isoDate, startMinutes])
+
+    setStartMinutes((prev) => {
+      if (opts.includes(prev)) return prev
+      return getDefaultStartMinutes({ isoDate, durationMinutes: nextDur })
+    })
+  }
 
   const pricing = useMemo(() => {
     if (!selectedTable) return null
@@ -181,10 +190,7 @@ export default function ReservationPage() {
 
   const [holdRemainingMs, setHoldRemainingMs] = useState(0)
   useEffect(() => {
-    if (!activeHoldReservation?.holdExpiresAtDate) {
-      setHoldRemainingMs(0)
-      return
-    }
+    if (!activeHoldReservation?.holdExpiresAtDate) return
 
     const tick = () => {
       const ms = activeHoldReservation.holdExpiresAtDate.getTime() - Date.now()
@@ -273,7 +279,14 @@ export default function ReservationPage() {
         <div className="formGrid" style={{ marginTop: 12 }}>
           <label className="field">
             <div className="field__label">Name</div>
-            <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="input" />
+            <input
+              value={customerNameValue}
+              onChange={(e) => {
+                if (!customerNameTouched) setCustomerNameTouched(true)
+                setCustomerName(e.target.value)
+              }}
+              className="input"
+            />
           </label>
 
           <label className="field">
@@ -284,8 +297,11 @@ export default function ReservationPage() {
           <label className="field">
             <div className="field__label">Email</div>
             <input
-              value={customerEmail}
-              onChange={(e) => setCustomerEmail(e.target.value)}
+              value={customerEmailValue}
+              onChange={(e) => {
+                if (!customerEmailTouched) setCustomerEmailTouched(true)
+                setCustomerEmail(e.target.value)
+              }}
               className="input"
               disabled={Boolean(user?.email)}
             />
@@ -324,7 +340,7 @@ export default function ReservationPage() {
             <div className="field__label">Date</div>
             <input
               value={isoDate}
-              onChange={(e) => setIsoDate(e.target.value)}
+              onChange={(e) => onChangeDate(e.target.value)}
               type="date"
               className="input"
             />
@@ -334,12 +350,12 @@ export default function ReservationPage() {
             <div className="field__label">Duration</div>
             <select
               value={durationMinutes}
-              onChange={(e) => setDurationMinutes(clampDurationMinutes(e.target.value))}
+              onChange={(e) => onChangeDuration(e.target.value)}
               className="input"
             >
               {durationOptions.map((mins) => (
                 <option key={mins} value={mins}>
-                  {mins / 60}h
+                  {mins} minutes
                 </option>
               ))}
             </select>

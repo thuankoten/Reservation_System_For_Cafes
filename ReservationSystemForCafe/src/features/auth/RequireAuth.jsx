@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useAuth } from './AuthContext'
+import { useAuth } from './useAuth'
 import { Navigate, useLocation } from 'react-router-dom'
 import { getUserById } from '../../shared/services/users'
 
@@ -36,7 +36,7 @@ export default function RequireAuth({ children, allowedRoles = [] }) {
         if (!cancelled) setAllowed(Boolean(ok))
       } catch (err) {
         // treat error as not allowed
-        // eslint-disable-next-line no-console
+        // log and treat error as not allowed
         console.error('RequireAuth getUserById error', err)
         if (!cancelled) setAllowed(false)
       } finally {

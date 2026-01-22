@@ -8,14 +8,9 @@ import {
   where,
 } from 'firebase/firestore'
 import { auth, db } from '../../../shared/firebase'
-import { useAuth } from '../../auth/AuthContext'
+import { useAuth } from '../../auth/useAuth'
 import { useNavigate } from 'react-router-dom'
 
-function toISODateTimeLocalValue(date) {
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
-  
 export default function CustomerDashboard() {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -25,7 +20,7 @@ export default function CustomerDashboard() {
   const [selectedTableId, setSelectedTableId] = useState('')
   const [partySize, setPartySize] = useState(2)
   const [error, setError] = useState('')
-  const [submitting, setSubmitting] = useState(false)
+  const submitting = false
 
   useEffect(() => {
     const qTables = query(collection(db, 'tables'), orderBy('number', 'asc'))

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
-  addDoc,
   collection,
   deleteDoc,
   doc,
@@ -28,15 +28,10 @@ function toInt(value, fallback) {
 }
 
 export default function AdminTablesPage() {
+  const navigate = useNavigate()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-
-  const [newNumber, setNewNumber] = useState('')
-  const [newSeats, setNewSeats] = useState('2')
-  const [newFloor, setNewFloor] = useState('1')
-  const [newStatus, setNewStatus] = useState('available')
-  const [creating, setCreating] = useState(false)
 
   const [editing, setEditing] = useState({})
   const [savingId, setSavingId] = useState('')
@@ -61,8 +56,6 @@ export default function AdminTablesPage() {
 
     return () => unsub()
   }, [])
-
-  const numberSet = useMemo(() => new Set(rows.map((r) => Number(r.number))), [rows])
 
   async function assignFloors() {
     const ok = window.confirm('Auto-assign floor (1/2/3) for all tables based on table number order?')
@@ -89,54 +82,6 @@ export default function AdminTablesPage() {
       await batch.commit()
     } catch (e) {
       setError(e?.message || 'Failed to assign floors')
-    }
-  }
-
-  async function createTable() {
-    setError('')
-    const number = toInt(newNumber, NaN)
-    const seats = toInt(newSeats, NaN)
-    const floor = toInt(newFloor, NaN)
-
-    if (!Number.isFinite(number) || number <= 0) {
-      setError('Table number must be a positive integer')
-      return
-    }
-    if (!Number.isFinite(seats) || seats <= 0) {
-      setError('Seats must be a positive integer')
-      return
-    }
-
-    if (!SEATS_OPTIONS.includes(seats)) {
-      setError('Seats must be one of: 2, 4, 6, 8')
-      return
-    }
-    if (!FLOOR_OPTIONS.includes(floor)) {
-      setError('Floor must be one of: 1, 2, 3')
-      return
-    }
-    if (numberSet.has(number)) {
-      setError('A table with this number already exists')
-      return
-    }
-
-    setCreating(true)
-    try {
-      await addDoc(collection(db, 'tables'), {
-        number,
-        seats,
-        floor,
-        status: newStatus,
-        updatedAt: serverTimestamp(),
-      })
-      setNewNumber('')
-      setNewSeats('2')
-      setNewFloor('1')
-      setNewStatus('available')
-    } catch (e) {
-      setError(e?.message || 'Failed to create table')
-    } finally {
-      setCreating(false)
     }
   }
 
@@ -224,56 +169,19 @@ export default function AdminTablesPage() {
   return (
     <div className="stack">
       <div className="card">
-        <h2 className="pageTitle">Admin • Tables</h2>
-        <div className="muted">Create, update, and delete tables</div>
-
-        {error ? <div className="error" style={{ marginTop: 12 }}>{error}</div> : null}
-
-        <div className="adminTableForm" style={{ marginTop: 12 }}>
-          <label className="field">
-            <div className="field__label">Number</div>
-            <input className="input" value={newNumber} onChange={(e) => setNewNumber(e.target.value)} placeholder="e.g. 1" />
-          </label>
-
-          <label className="field">
-            <div className="field__label">Seats</div>
-            <select className="input" value={newSeats} onChange={(e) => setNewSeats(e.target.value)}>
-              {SEATS_OPTIONS.map((s) => (
-                <option key={s} value={String(s)}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="field">
-            <div className="field__label">Floor</div>
-            <select className="input" value={newFloor} onChange={(e) => setNewFloor(e.target.value)}>
-              {FLOOR_OPTIONS.map((f) => (
-                <option key={f} value={String(f)}>
-                  {f}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="field">
-            <div className="field__label">Status</div>
-            <select className="input" value={newStatus} onChange={(e) => setNewStatus(e.target.value)}>
-              {STATUS_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="field" style={{ alignSelf: 'end' }}>
-            <button className="btn btn--primary" disabled={creating} onClick={createTable}>
-              {creating ? 'Creating…' : 'Add table'}
+        <div className="cardHeader">
+          <div>
+            <h2 className="pageTitle">Admin • Tables</h2>
+            <div className="muted">Create, update, and delete tables</div>
+          </div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button className="btn btn--primary" type="button" onClick={() => navigate('/admin/dashboard/tables/new')}>
+              Add table
             </button>
           </div>
         </div>
+
+        {error ? <div className="error" style={{ marginTop: 12 }}>{error}</div> : null}
       </div>
 
       <div className="card">

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { collection, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore'
 import { db } from '../../../shared/firebase'
-import { useAuth } from '../../auth/AuthContext.jsx'
+import { useAuth } from '../../auth/useAuth'
 
 function Badge({ tone = 'neutral', children }) {
   return <span className={`badge badge--${tone}`}>{children}</span>
@@ -46,6 +46,7 @@ export default function OverviewPage() {
   const [totalCount, setTotalCount] = useState(null)
   const [currentReservation, setCurrentReservation] = useState(null)
   const [loadingReservation, setLoadingReservation] = useState(true)
+  const [reservationUserId, setReservationUserId] = useState('')
   const [loadingTables, setLoadingTables] = useState(true)
   const [error, setError] = useState('')
 
@@ -57,13 +58,11 @@ export default function OverviewPage() {
   })
 
   useEffect(() => {
-    setError('')
-    setLoadingTables(true)
-
     const qTables = query(collection(db, 'tables'), orderBy('number', 'asc'))
     const unsub = onSnapshot(
       qTables,
       (snap) => {
+        setError('')
         const rows = snap.docs.map((d) => d.data())
         const available = rows.filter((t) => (t.status || 'available') === 'available').length
         setAvailableCount(available)
@@ -80,15 +79,8 @@ export default function OverviewPage() {
   }, [])
 
   useEffect(() => {
-    setError('')
+    if (!user?.uid) return
 
-    if (!user?.uid) {
-      setCurrentReservation(null)
-      setLoadingReservation(false)
-      return
-    }
-
-    setLoadingReservation(true)
     const qRecent = query(
       collection(db, 'reservations'),
       where('userId', '==', user.uid),
@@ -99,6 +91,8 @@ export default function OverviewPage() {
     const unsub = onSnapshot(
       qRecent,
       (snap) => {
+        setError('')
+        setReservationUserId(user.uid)
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
         const now = new Date()
         const normalized = rows.map((r) => {
@@ -115,12 +109,17 @@ export default function OverviewPage() {
       },
       (e) => {
         setError(e?.message || 'Failed to load reservation')
+        setReservationUserId(user.uid)
         setLoadingReservation(false)
       }
     )
 
     return () => unsub()
   }, [user?.uid])
+
+  const loadingReservationForView = Boolean(user?.uid) && reservationUserId !== user.uid
+    ? true
+    : loadingReservation
 
   const snapshotText = useMemo(() => {
     if (loadingTables) return 'Loading availability…'
@@ -130,6 +129,7 @@ export default function OverviewPage() {
 
   const reservationSummary = useMemo(() => {
     if (!currentReservation) return null
+    if (user?.uid && currentReservation.userId && currentReservation.userId !== user.uid) return null
     const start = currentReservation.startTime?.toDate ? currentReservation.startTime.toDate() : new Date(currentReservation.startTime)
     const mins = minutesFromNow(start)
     return {
@@ -140,7 +140,7 @@ export default function OverviewPage() {
       partySize: currentReservation.partySize,
       status: currentReservation.status,
     }
-  }, [currentReservation])
+  }, [currentReservation, user])
 
   const statusBadge = useMemo(() => {
     const s = String(reservationSummary?.status || '').toLowerCase()
@@ -190,13 +190,13 @@ export default function OverviewPage() {
             {user ? <Badge tone="neutral">Signed in</Badge> : <Badge tone="neutral">Guest</Badge>}
           </div>
 
-          {loadingReservation ? (
-            <div className="muted" style={{ marginTop: 12 }}>
-              Loading…
-            </div>
-          ) : !user ? (
+          {!user ? (
             <div style={{ marginTop: 12 }}>
               <div className="muted">Browsing as guest.</div>
+            </div>
+          ) : loadingReservationForView ? (
+            <div className="muted" style={{ marginTop: 12 }}>
+              Loading…
             </div>
           ) : !reservationSummary ? (
             <div style={{ marginTop: 12 }}>
