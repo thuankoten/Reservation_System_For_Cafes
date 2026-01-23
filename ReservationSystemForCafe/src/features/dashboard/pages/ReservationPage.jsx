@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   collection,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -10,16 +11,14 @@ import { signInAnonymously } from 'firebase/auth'
 import { useSearchParams } from 'react-router-dom'
 import { auth, db } from '../../../shared/firebase'
 import { useAuth } from '../../auth/useAuth'
-import { cancelReservation, createHoldReservation } from '../../../shared/services/reservations'
+import { cancelReservation, createHoldReservation, expireReservation } from '../../../shared/services/reservations'
 import { calculateTotalAmount } from '../../../shared/utils/pricing'
 import {
-  buildDateFromISOAndMinutes,
-  clampDurationMinutes,
   formatISODate,
-  listDurationOptions,
   listStartMinutesForDuration,
   minutesToTimeLabel,
   TIMELINE_CONFIG,
+  buildDateFromISOAndMinutes,
 } from '../../../shared/utils/timeline'
 
 function toDate(v) {
@@ -60,20 +59,44 @@ function getDefaultStartMinutes({ isoDate, durationMinutes }) {
   return typeof found === 'number' ? found : startOptions[0]
 }
 
+function clampNumber(value, min, max) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return min
+  return Math.max(min, Math.min(max, n))
+}
+
+function computeDefaultEndMinutes({ startMinutes, durationMinutes }) {
+  const base = Number(startMinutes)
+  const dur = Number(durationMinutes)
+  const step = TIMELINE_CONFIG.stepMinutes
+  const minEnd = base + step
+  const desired = base + (Number.isFinite(dur) ? dur : step)
+  const maxEnd = TIMELINE_CONFIG.closeMinutes
+  return Math.max(minEnd, Math.min(maxEnd, desired))
+}
+
 export default function ReservationPage() {
   const { user } = useAuth()
   const [searchParams] = useSearchParams()
   const [initialTableId] = useState(() => searchParams.get('tableId') || '')
   const [tables, setTables] = useState([])
+  const [reservations, setReservations] = useState([])
   const [myReservations, setMyReservations] = useState([])
 
   const [selectedTableId, setSelectedTableId] = useState('')
   const [partySize, setPartySize] = useState(2)
+  const [partySizeTouched, setPartySizeTouched] = useState(false)
 
   const [isoDate, setIsoDate] = useState(() => formatISODate(new Date()))
-  const [durationMinutes, setDurationMinutes] = useState(120)
+  const [durationMinutes] = useState(120)
   const [startMinutes, setStartMinutes] = useState(() =>
     getDefaultStartMinutes({ isoDate: formatISODate(new Date()), durationMinutes: 120 })
+  )
+  const [endMinutes, setEndMinutes] = useState(() =>
+    computeDefaultEndMinutes({
+      startMinutes: getDefaultStartMinutes({ isoDate: formatISODate(new Date()), durationMinutes: 120 }),
+      durationMinutes: 120,
+    })
   )
 
   const [customerName, setCustomerName] = useState('')
@@ -96,8 +119,8 @@ export default function ReservationPage() {
         setSelectedTableId((prev) => {
           if (prev && rows.some((t) => t.id === prev)) return prev
           if (initialTableId && rows.some((t) => t.id === initialTableId)) return initialTableId
-          const firstAvailable = rows.find((t) => (t.status || 'available') === 'available')
-          return firstAvailable ? firstAvailable.id : ''
+          const firstSelectable = rows.find((t) => String(t.status || 'available').toLowerCase() !== 'occupied')
+          return firstSelectable ? firstSelectable.id : ''
         })
       },
       (e) => setError(e?.message || 'Failed to load tables')
@@ -107,17 +130,41 @@ export default function ReservationPage() {
   }, [initialTableId])
 
   useEffect(() => {
+    const q = query(collection(db, 'reservations'), orderBy('createdAt', 'desc'), limit(100))
+    const unsub = onSnapshot(
+      q,
+      (snap) => setReservations(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      () => setReservations([])
+    )
+    return () => unsub()
+  }, [])
+
+  useEffect(() => {
     if (!user?.uid) return
 
     const qMine = query(
       collection(db, 'reservations'),
       where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc')
+      orderBy('createdAt', 'desc'),
+      limit(50)
     )
 
     const unsub = onSnapshot(
       qMine,
-      (snap) => setMyReservations(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      (snap) => {
+        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        setMyReservations(rows)
+
+        const now = new Date()
+        for (const r of rows) {
+          const status = String(r.status || '').toLowerCase()
+          if (status !== 'hold') continue
+          const expiresAt = toDate(r.holdExpiresAt)
+          if (expiresAt && expiresAt <= now) {
+            expireReservation({ db, reservationId: r.id }).catch(() => {})
+          }
+        }
+      },
       (e) => setError(e?.message || 'Failed to load reservations')
     )
 
@@ -127,55 +174,129 @@ export default function ReservationPage() {
   const customerNameValue = customerNameTouched ? customerName : (user?.displayName || customerName)
   const customerEmailValue = user?.email ? user.email : (customerEmailTouched ? customerEmail : customerEmail)
 
-  const availableTables = useMemo(
-    () => tables.filter((t) => (t.status || 'available') === 'available'),
-    [tables]
-  )
-
   const selectedTable = useMemo(
     () => tables.find((t) => t.id === selectedTableId) || null,
     [selectedTableId, tables]
   )
 
-  const durationOptions = useMemo(
-    () => listDurationOptions({ stepMinutes: TIMELINE_CONFIG.stepMinutes, maxDurationMinutes: TIMELINE_CONFIG.maxDurationMinutes }),
-    []
+  const allTableOptions = useMemo(
+    () => tables.slice().sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0)),
+    [tables]
   )
 
-  const startOptions = useMemo(
-    () => listStartMinutesForDuration({ durationMinutes: Number(durationMinutes) }),
-    [durationMinutes]
-  )
+  const selectedRange = useMemo(() => {
+    const start = buildDateFromISOAndMinutes(isoDate, Number(startMinutes))
+    const end = buildDateFromISOAndMinutes(isoDate, Number(endMinutes))
+    return { start, end }
+  }, [endMinutes, isoDate, startMinutes])
 
-  function onChangeDate(nextIso) {
-    setIsoDate(nextIso)
-    setStartMinutes(getDefaultStartMinutes({ isoDate: nextIso, durationMinutes }))
-  }
+  const reservedTableIdsForSelectedRange = useMemo(() => {
+    const now = new Date()
+    const set = new Set()
 
-  function onChangeDuration(next) {
-    const nextDur = clampDurationMinutes(next)
-    setDurationMinutes(nextDur)
+    const selectedStart = selectedRange.start
+    const selectedEnd = selectedRange.end
+    if (!(selectedStart instanceof Date) || !(selectedEnd instanceof Date)) return set
+    if (Number.isNaN(selectedStart.getTime()) || Number.isNaN(selectedEnd.getTime())) return set
+    if (selectedEnd <= selectedStart) return set
 
-    const opts = listStartMinutesForDuration({ durationMinutes: Number(nextDur) })
-    if (!opts.length) {
-      setStartMinutes(TIMELINE_CONFIG.openMinutes)
+    for (const r of reservations) {
+      if (!r?.tableId) continue
+      const status = String(r.status || '').toLowerCase()
+      if (status !== 'confirmed' && status !== 'hold') continue
+
+      if (status === 'hold') {
+        const expiresAt = toDate(r.holdExpiresAt)
+        if (!expiresAt || expiresAt <= now) continue
+      }
+
+      const rStart = toDate(r.startTime)
+      const rEnd = toDate(r.endTime)
+      if (!(rStart instanceof Date) || !(rEnd instanceof Date)) continue
+      if (Number.isNaN(rStart.getTime()) || Number.isNaN(rEnd.getTime())) continue
+
+      if (formatISODate(rStart) !== isoDate) continue
+
+      const overlaps = rStart < selectedEnd && rEnd > selectedStart
+      if (overlaps) set.add(r.tableId)
+    }
+
+    return set
+  }, [isoDate, reservations, selectedRange.end, selectedRange.start])
+
+  const selectedEffectiveStatus = useMemo(() => {
+    const st = String(selectedTable?.status || 'available').toLowerCase()
+    if (!selectedTable?.id) return st
+    if (st === 'occupied') return 'occupied'
+    if (reservedTableIdsForSelectedRange.has(selectedTable.id)) return 'reserved'
+    return st
+  }, [reservedTableIdsForSelectedRange, selectedTable?.id, selectedTable?.status])
+
+  const isSelectedTableUnavailable = selectedEffectiveStatus === 'reserved' || selectedEffectiveStatus === 'occupied'
+
+  const minPartySize = 1
+  const maxPartySize = Number.isFinite(Number(selectedTable?.seats)) ? Number(selectedTable?.seats) + 1 : 1
+
+  useEffect(() => {
+    const seats = Number(selectedTable?.seats)
+    const nextMax = Number.isFinite(seats) ? seats + 1 : 1
+
+    if (!partySizeTouched && Number.isFinite(seats) && seats > 0) {
+      setPartySize(seats)
       return
     }
 
-    setStartMinutes((prev) => {
-      if (opts.includes(prev)) return prev
-      return getDefaultStartMinutes({ isoDate, durationMinutes: nextDur })
+    setPartySize((p) => clampNumber(p, 1, Math.max(1, nextMax)))
+  }, [partySizeTouched, selectedTable?.seats])
+
+  const startOptions = useMemo(
+    () => listStartMinutesForDuration({ durationMinutes: TIMELINE_CONFIG.stepMinutes }),
+    []
+  )
+
+  const endOptions = useMemo(() => {
+    const step = TIMELINE_CONFIG.stepMinutes
+    const start = Number(startMinutes)
+    if (!Number.isFinite(start)) return []
+
+    const latestEnd = Math.min(TIMELINE_CONFIG.closeMinutes, start + TIMELINE_CONFIG.maxDurationMinutes)
+    const out = []
+    for (let m = start + step; m <= latestEnd; m += step) out.push(m)
+    return out
+  }, [startMinutes])
+
+  useEffect(() => {
+    setEndMinutes((prev) => {
+      const step = TIMELINE_CONFIG.stepMinutes
+      const start = Number(startMinutes)
+      if (!Number.isFinite(start)) return prev
+      const minEnd = start + step
+      const maxEnd = Math.min(TIMELINE_CONFIG.closeMinutes, start + TIMELINE_CONFIG.maxDurationMinutes)
+      return clampNumber(prev, minEnd, maxEnd)
     })
+  }, [startMinutes])
+
+  const derivedDurationMinutes = useMemo(() => {
+    const d = Number(endMinutes) - Number(startMinutes)
+    if (!Number.isFinite(d) || d <= 0) return TIMELINE_CONFIG.stepMinutes
+    return d
+  }, [endMinutes, startMinutes])
+
+  function onChangeDate(nextIso) {
+    setIsoDate(nextIso)
+    const nextStart = getDefaultStartMinutes({ isoDate: nextIso, durationMinutes })
+    setStartMinutes(nextStart)
+    setEndMinutes(computeDefaultEndMinutes({ startMinutes: nextStart, durationMinutes }))
   }
 
   const pricing = useMemo(() => {
     if (!selectedTable) return null
     const seats = Number(selectedTable.seats)
-    const dur = Number(durationMinutes)
+    const dur = Number(derivedDurationMinutes)
     const totalAmount = calculateTotalAmount({ seats, durationMinutes: dur })
     if (totalAmount == null) return null
     return { totalAmount }
-  }, [durationMinutes, selectedTable])
+  }, [derivedDurationMinutes, selectedTable])
 
   const activeHoldReservation = useMemo(() => {
     const now = new Date()
@@ -210,10 +331,28 @@ export default function ReservationPage() {
     return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
   }, [holdRemainingMs])
 
+  const myReservationRows = useMemo(() => {
+    const now = new Date()
+    return myReservations.map((r) => {
+      const status = String(r.status || '').toLowerCase()
+      const expiresAt = toDate(r.holdExpiresAt)
+      const startTime = toDate(r.startTime)
+      const endTime = toDate(r.endTime)
+      const isHoldActive = status === 'hold' && expiresAt && expiresAt > now
+      const statusLabel = status === 'confirmed' ? 'Confirmed' : status === 'hold' ? (isHoldActive ? 'Pending approval' : 'Expired') : status || '—'
+      return { ...r, _status: status, _expiresAt: expiresAt, _startTime: startTime, _endTime: endTime, _isHoldActive: isHoldActive, _statusLabel: statusLabel }
+    })
+  }, [myReservations])
+
   async function createReservation() {
     setError('')
     if (!selectedTableId) {
       setError('Please select a table')
+      return
+    }
+
+    if (activeHoldReservation) {
+      setError('You already have a pending reservation. Please wait for admin confirmation or cancel it.')
       return
     }
 
@@ -233,10 +372,37 @@ export default function ReservationPage() {
       return
     }
 
+    if (String(selectedTable.status || 'available').toLowerCase() === 'occupied') {
+      setError('Selected table is occupied')
+      return
+    }
+    if (reservedTableIdsForSelectedRange.has(selectedTable.id)) {
+      setError('This table is not available for the selected time')
+      return
+    }
+
+    const dur = Number(derivedDurationMinutes)
+    if (!Number.isFinite(dur) || dur <= 0) {
+      setError('Invalid time range')
+      return
+    }
+    if (dur % TIMELINE_CONFIG.stepMinutes !== 0) {
+      setError('Time must be in 30-minute blocks')
+      return
+    }
+    if (dur > TIMELINE_CONFIG.maxDurationMinutes) {
+      setError('Duration exceeds max (6h)')
+      return
+    }
+
     const seats = Number(selectedTable.seats)
     const party = Number(partySize)
-    if (Number.isFinite(seats) && Number.isFinite(party) && party > seats) {
-      setError('Party size exceeds table capacity')
+    if (!Number.isFinite(party) || party < 1) {
+      setError('Party size must be at least 1')
+      return
+    }
+    if (Number.isFinite(seats) && Number.isFinite(party) && party > seats + 1) {
+      setError('Party size exceeds max allowed (seats + 1)')
       return
     }
 
@@ -248,11 +414,11 @@ export default function ReservationPage() {
         table: selectedTable,
         isoDate,
         startMinutes,
-        durationMinutes,
+        durationMinutes: derivedDurationMinutes,
         partySize,
-        customerName,
+        customerName: customerNameValue,
         customerPhone,
-        customerEmail,
+        customerEmail: customerEmailValue,
       })
     } catch (e) {
       setError(e?.message || 'Failed to create reservation')
@@ -274,7 +440,7 @@ export default function ReservationPage() {
     <div className="stack">
       <div className="card">
         <h2 className="pageTitle">Reservation</h2>
-        <div className="muted">Hold a table for 5 minutes</div>
+        <div className="muted">Reserve request (pending admin confirmation). Expires in 5 minutes.</div>
 
         <div className="formGrid" style={{ marginTop: 12 }}>
           <label className="field">
@@ -317,11 +483,17 @@ export default function ReservationPage() {
               <option value="" disabled>
                 Select a table
               </option>
-              {availableTables.map((t) => (
-                <option key={t.id} value={t.id}>
-                  Table {t.number} (seats: {t.seats || '?'})
-                </option>
-              ))}
+              {allTableOptions.map((t) => {
+                const st = String(t.status || 'available').toLowerCase()
+                const effectiveStatus = st === 'occupied' ? 'occupied' : reservedTableIdsForSelectedRange.has(t.id) ? 'reserved' : st
+                const label = effectiveStatus === 'occupied' ? 'Occupied' : effectiveStatus === 'reserved' ? 'Reserved' : effectiveStatus === 'available' ? 'Free' : effectiveStatus
+                const disabled = effectiveStatus === 'occupied' || effectiveStatus === 'reserved'
+                return (
+                  <option key={t.id} value={t.id} disabled={disabled}>
+                    Table {t.number} (seats: {t.seats || '?'}) • {label}
+                  </option>
+                )
+              })}
             </select>
           </label>
 
@@ -329,9 +501,14 @@ export default function ReservationPage() {
             <div className="field__label">Party size</div>
             <input
               value={partySize}
-              onChange={(e) => setPartySize(e.target.value)}
+              onChange={(e) => {
+                if (!partySizeTouched) setPartySizeTouched(true)
+                const next = clampNumber(e.target.value, minPartySize, Math.max(1, maxPartySize))
+                setPartySize(next)
+              }}
               type="number"
               min={1}
+              max={Math.max(1, maxPartySize)}
               className="input"
             />
           </label>
@@ -344,21 +521,6 @@ export default function ReservationPage() {
               type="date"
               className="input"
             />
-          </label>
-
-          <label className="field">
-            <div className="field__label">Duration</div>
-            <select
-              value={durationMinutes}
-              onChange={(e) => onChangeDuration(e.target.value)}
-              className="input"
-            >
-              {durationOptions.map((mins) => (
-                <option key={mins} value={mins}>
-                  {mins} minutes
-                </option>
-              ))}
-            </select>
           </label>
 
           <label className="field">
@@ -376,27 +538,46 @@ export default function ReservationPage() {
             </select>
           </label>
 
+          <label className="field">
+            <div className="field__label">End time</div>
+            <select
+              value={endMinutes}
+              onChange={(e) => setEndMinutes(Number(e.target.value))}
+              className="input"
+            >
+              {endOptions.map((m) => (
+                <option key={m} value={m}>
+                  {minutesToTimeLabel(m)}
+                </option>
+              ))}
+            </select>
+          </label>
+
           <div className="field" style={{ alignSelf: 'end' }}>
-            <button disabled={submitting} onClick={createReservation} className="btn btn--primary">
-              {submitting ? 'Creating...' : 'Hold (5 min)'}
+            <button
+              disabled={submitting || isSelectedTableUnavailable}
+              onClick={createReservation}
+              className="btn btn--primary"
+            >
+              {submitting ? 'Creating...' : 'Reserve'}
             </button>
           </div>
         </div>
 
+        {isSelectedTableUnavailable ? (
+          <div className="error" style={{ marginTop: 12 }}>
+            This table is not available for the selected time.
+          </div>
+        ) : null}
+
         <div className="kv">
           <div className="kv__row">
-            <div className="kv__k">Start</div>
+            <div className="kv__k">Start time</div>
             <div className="kv__v">{minutesToTimeLabel(startMinutes)}</div>
           </div>
           <div className="kv__row">
-            <div className="kv__k">End</div>
-            <div className="kv__v">
-              {(() => {
-                const end = buildDateFromISOAndMinutes(isoDate, startMinutes + Number(durationMinutes || 0))
-                const mins = end.getHours() * 60 + end.getMinutes()
-                return minutesToTimeLabel(mins)
-              })()}
-            </div>
+            <div className="kv__k">End time</div>
+            <div className="kv__v">{minutesToTimeLabel(Number(endMinutes))}</div>
           </div>
           <div className="kv__row">
             <div className="kv__k">Total</div>
@@ -406,7 +587,7 @@ export default function ReservationPage() {
 
         {activeHoldReservation ? (
           <div className="muted" style={{ marginTop: 12 }}>
-            Hold active • expires in <b>{holdCountdownText}</b>
+            Pending approval • expires in <b>{holdCountdownText}</b>
           </div>
         ) : null}
 
@@ -418,15 +599,16 @@ export default function ReservationPage() {
         <div className="stack">
           {!user ? <div className="muted">Sign in to see your reservation history on this device.</div> : null}
           {user && myReservations.length === 0 ? <div className="muted">No reservations yet.</div> : null}
-          {myReservations.map((r) => (
+          {myReservationRows.map((r) => (
             <div key={r.id} className="rowCard">
               <div>
-                <div className="rowCard__title">Table: {r.tableId}</div>
-                <div className="muted">Party size: {r.partySize}</div>
-                <div className="muted">Status: {r.status}</div>
+                <div className="rowCard__title">Table: {r.tableNumber ?? r.tableId}</div>
+                <div className="muted">Party size: {r.partySize ?? '—'}</div>
+                <div className="muted">Time: {r._startTime ? r._startTime.toLocaleString() : '—'} → {r._endTime ? r._endTime.toLocaleString() : '—'}</div>
+                <div className="muted">Status: {r._statusLabel}</div>
               </div>
               <div>
-                {['active', 'hold', 'confirmed'].includes(String(r.status || '').toLowerCase()) ? (
+                {['hold', 'confirmed'].includes(String(r._status || '').toLowerCase()) ? (
                   <button onClick={() => onCancelReservation(r.id, r.tableId, r.slotKeys)} className="btn">
                     Cancel
                   </button>

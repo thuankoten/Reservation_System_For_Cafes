@@ -570,6 +570,21 @@ body {
    gap: 14px;
    z-index: 6;
    animation: reservationDetailsIn 220ms ease-in;
+   transform-origin: top right;
+   will-change: transform, opacity;
+   transition: transform 220ms ease, opacity 220ms ease;
+ }
+
+ .tablesAside--open {
+   transform: translateX(0);
+   opacity: 1;
+   pointer-events: auto;
+ }
+
+ .tablesAside--closed {
+   transform: translateX(18px);
+   opacity: 0;
+   pointer-events: none;
  }
 
  @keyframes reservationDetailsIn {
@@ -586,6 +601,7 @@ body {
  @media (prefers-reduced-motion: reduce) {
    .tablesAside {
      animation: none;
+     transition: none;
    }
  }
 
@@ -1020,6 +1036,118 @@ body {
 
  .tablesSection__title {
    font-weight: 800;
+ }
+
+ .ganttWrap {
+   border: 1px solid #e5e7eb;
+   border-radius: 16px;
+   background: #ffffff;
+   overflow: auto;
+ }
+
+ .ganttHeader {
+   position: sticky;
+   top: 0;
+   z-index: 2;
+   display: grid;
+   grid-template-columns: 90px calc(var(--slotCount, 10) * var(--cellW, 64px));
+   align-items: stretch;
+   background: rgba(249, 250, 251, 0.96);
+   border-bottom: 1px solid #e5e7eb;
+ }
+
+ .ganttBody {
+   display: grid;
+ }
+
+ .ganttRow {
+   display: grid;
+   grid-template-columns: 90px calc(var(--slotCount, 10) * var(--cellW, 64px));
+   align-items: stretch;
+   border-bottom: 1px solid #f3f4f6;
+ }
+
+ .ganttRow:last-child {
+   border-bottom: 0;
+ }
+
+ .ganttLabelCell {
+   position: sticky;
+   left: 0;
+   z-index: 3;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   padding: 10px 8px;
+   font-weight: 800;
+   color: #111827;
+   background: rgba(255, 255, 255, 0.96);
+   border-right: 1px solid #e5e7eb;
+ }
+
+ .ganttTimeAxis {
+   display: grid;
+   grid-template-columns: repeat(var(--slotCount, 10), var(--cellW, 64px));
+ }
+
+ .ganttTick {
+   padding: 10px 8px;
+   font-size: 12px;
+   color: rgba(17, 24, 39, 0.72);
+   border-right: 1px solid #f3f4f6;
+   white-space: nowrap;
+ }
+
+ .ganttTrack {
+   position: relative;
+   min-height: 44px;
+   background-image: repeating-linear-gradient(
+     to right,
+     transparent 0,
+     transparent calc(var(--cellW, 64px) - 1px),
+     rgba(229, 231, 235, 0.7) calc(var(--cellW, 64px) - 1px),
+     rgba(229, 231, 235, 0.7) var(--cellW, 64px)
+   );
+ }
+
+ .ganttBar {
+   position: absolute;
+   top: 10px;
+   height: 24px;
+   border-radius: 999px;
+   border: 1px solid rgba(17, 24, 39, 0.12);
+   box-shadow: 0 6px 14px rgba(17, 24, 39, 0.08);
+ }
+
+ .ganttBar--confirmed {
+   background: rgba(16, 185, 129, 0.22);
+   border-color: rgba(16, 185, 129, 0.35);
+ }
+
+ .ganttBar--hold {
+   background: rgba(245, 158, 11, 0.22);
+   border-color: rgba(245, 158, 11, 0.35);
+ }
+
+ .contextMenu {
+   position: fixed;
+   z-index: 50;
+   min-width: 180px;
+   padding: 8px;
+   border-radius: 12px;
+   background: rgba(255, 255, 255, 0.98);
+   border: 1px solid #e5e7eb;
+   box-shadow: 0 14px 30px rgba(17, 24, 39, 0.16);
+ }
+
+ .contextMenu__btn {
+   width: 100%;
+   display: flex;
+   justify-content: flex-start;
+ }
+
+ .contextMenu__btn + .contextMenu__btn {
+   margin-top: 8px;
  }
 
  .adminTableForm {

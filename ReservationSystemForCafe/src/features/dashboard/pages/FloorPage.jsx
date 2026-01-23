@@ -3,6 +3,9 @@ import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestor
 import { useNavigate } from 'react-router-dom'
 import { db } from '../../../shared/firebase'
 import { useAuth } from '../../auth/useAuth'
+import { formatISODate } from '../../../shared/utils/timeline'
+import TableMap from '../../../shared/components/tables/TableMap'
+import TableTimeline from '../../../shared/components/tables/TableTimeline'
 
 export default function FloorPage() {
   useAuth()
@@ -11,10 +14,14 @@ export default function FloorPage() {
   const [activeView, setActiveView] = useState('map')
   const [activeStatus, setActiveStatus] = useState('all')
   const [activeFloor, setActiveFloor] = useState(1)
+  const [timelineIsoDate, setTimelineIsoDate] = useState(() => formatISODate(new Date()))
   const [selectedTableId, setSelectedTableId] = useState('')
+  const [detailsTableId, setDetailsTableId] = useState('')
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const [imageViewerOpen, setImageViewerOpen] = useState(false)
   const [imageViewerSrc, setImageViewerSrc] = useState('')
   const [imageViewerZoom, setImageViewerZoom] = useState(1)
+  const [imageThumbErrorByTableId, setImageThumbErrorByTableId] = useState(() => new Map())
   const [error, setError] = useState('')
   const [reservations, setReservations] = useState([])
   const [reservationsError, setReservationsError] = useState('')
@@ -77,13 +84,23 @@ export default function FloorPage() {
     }
   }
 
+  const formatDate = (d) => {
+    if (!d) return '—'
+    try {
+      return new Intl.DateTimeFormat(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
+    } catch {
+      return d.toISOString?.().slice(0, 10) || String(d)
+    }
+  }
+
   const now = new Date()
   const activeReservations = reservations
     .map((r) => {
       const status = String(r.status || '').toLowerCase()
       const startTimeDate = toDate(r.startTime)
+      const endTimeDate = toDate(r.endTime)
       const holdExpiresAt = toDate(r.holdExpiresAt)
-      return { ...r, _status: status, startTimeDate, _holdExpiresAt: holdExpiresAt }
+      return { ...r, _status: status, startTimeDate, endTimeDate, _holdExpiresAt: holdExpiresAt }
     })
     .filter((r) => {
       if (r._status === 'confirmed') return true
@@ -122,23 +139,25 @@ export default function FloorPage() {
     .slice()
     .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
 
-  const mapCount = mapTables.length
-  const mapCols = (() => {
-    if (mapCount <= 1) return 1
-    if (mapCount <= 3) return mapCount
-    if (mapCount <= 6) return 3
-    if (mapCount === 9) return 3
-    return 4
-  })()
-  const mapRows = Math.max(1, Math.ceil(mapCount / mapCols))
+  function closeDetails() {
+    setDetailsOpen(false)
+    setSelectedTableId('')
+    window.setTimeout(() => {
+      setDetailsTableId('')
+    }, 220)
+  }
 
-  const selectedTableIdForView = (() => {
-    if (!selectedTableId) return ''
-    return mapTables.some((t) => t.id === selectedTableId) ? selectedTableId : ''
-  })()
+  function openDetails(tableId) {
+    setDetailsTableId(tableId)
+    setSelectedTableId(tableId)
+    setDetailsOpen(true)
+  }
 
-  const selectedTable = selectedTableIdForView ? mapTables.find((t) => t.id === selectedTableIdForView) || null : null
-  const selectedReservation = selectedTableIdForView ? reservationByTableId.get(selectedTableIdForView) || null : null
+  const panelTableId = detailsTableId
+  const selectedTable = panelTableId ? tables.find((t) => t.id === panelTableId) || null : null
+  const selectedReservation = panelTableId ? reservationByTableId.get(panelTableId) || null : null
+
+  const selectedTableImageError = panelTableId ? imageThumbErrorByTableId.get(panelTableId) || false : false
 
   const statusSymbol = (s) => {
     if (s === 'free') return '✓'
@@ -151,7 +170,7 @@ export default function FloorPage() {
     const key = String(v || '').trim()
     if (!key) return '—'
     if (key === 'quiet_zone') return 'Quiet Zone'
-    if (key === 'window_seat') return 'Window Seat'
+    if (key === 'window_seat' || key === 'photo_spot') return 'Photo Spot'
     if (key === 'near_power_outlets') return 'Near power outlets'
     return key
   }
@@ -180,6 +199,11 @@ export default function FloorPage() {
     if (!t) return false
     return floorIdForTable(t) === activeFloor
   })
+
+  const timelineTables = tables
+    .filter((t) => floorIdForTable(t) === activeFloor)
+    .slice()
+    .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
 
   return (
     <div className={activeView === 'map' ? 'card tablesCard tablesCard--map' : 'card'}>
@@ -266,44 +290,27 @@ export default function FloorPage() {
       <div className={activeView === 'map' ? 'floorLayoutWrap' : 'grid'}>
         {activeView === 'map' ? (
           <div className="floorLayout">
-            <div
-              className="floorPlan"
-              role="region"
-              aria-label="Floor plan"
-              style={{ '--cols': mapCols, '--rows': mapRows }}
-              onClick={(e) => {
-                if (e.target === e.currentTarget) setSelectedTableId('')
+            <TableMap
+              tables={mapTables}
+              selectedTableId={selectedTableId}
+              reservationByTableId={reservationByTableId}
+              normalizedStatus={normalizedStatus}
+              statusSymbol={statusSymbol}
+              onBackgroundClick={() => closeDetails()}
+              onTableClick={(t) => {
+                if (selectedTableId === t.id) {
+                  closeDetails()
+                  return
+                }
+                openDetails(t.id)
               }}
-            >
-              {mapTables.map((t) => {
-                const status = normalizedStatus(t.status)
-                const hasReservation = reservationByTableId.has(t.id)
-                const effectiveStatus = hasReservation ? 'reserved' : status
-                const isActive = t.id === selectedTableId
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    className={`tableItem ${isActive ? 'tableItem--active' : ''}`}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setSelectedTableId(t.id)
-                    }}
-                  >
-                    <div className={`tableSquare tableSquare--${effectiveStatus}`}>
-                      <div className={`tableSquare__icon tableSquare__icon--${effectiveStatus}`}>
-                        <span className="tableSquare__symbol">{statusSymbol(effectiveStatus)}</span>
-                      </div>
-                      <div className={`tableSquare__status tableSquare__status--${effectiveStatus}`}>{effectiveStatus}</div>
-                    </div>
-                    <div className="tableNumber">{t.number}</div>
-                  </button>
-                )
-              })}
-            </div>
+            />
 
-            {selectedTableId ? (
-              <aside className="tablesAside" aria-label="Table details">
+            {panelTableId ? (
+              <aside
+                className={`tablesAside ${detailsOpen ? 'tablesAside--open' : 'tablesAside--closed'}`}
+                aria-label="Table details"
+              >
                 <section className="reservationPanel" aria-label="Reservation Details">
                   <header className="reservationPanel__header">
                     <div>
@@ -316,16 +323,16 @@ export default function FloorPage() {
                         type="button"
                         className="detailsCollapseBtn"
                         aria-label="Collapse Reservation Details"
-                        onClick={() => setSelectedTableId('')}
+                        onClick={closeDetails}
                       >
                         →
                       </button>
                       <button
                         type="button"
                         className="brandButton"
-                        disabled={!selectedTableId}
+                        disabled={!detailsOpen || !panelTableId}
                         onClick={() =>
-                          selectedTableId && navigate(`/dashboard/reservations?tableId=${encodeURIComponent(selectedTableId)}`)
+                          panelTableId && navigate(`/dashboard/reservations?tableId=${encodeURIComponent(panelTableId)}`)
                         }
                       >
                         Reserve
@@ -363,14 +370,50 @@ export default function FloorPage() {
                       </div>
 
                       {selectedTable.imageUrl ? (
-                        <button
-                          type="button"
-                          className="reservationPanel__thumbBtn"
-                          onClick={() => openImageViewer(selectedTable.imageUrl)}
-                          aria-label="View table image"
-                        >
-                          <img className="reservationPanel__thumb" src={selectedTable.imageUrl} alt="" loading="lazy" />
-                        </button>
+                        selectedTableImageError ? (
+                          <div className="rowCard" style={{ marginTop: 12, padding: 12 }}>
+                            <div>
+                              <div className="rowCard__title">Image failed to load</div>
+                              <div className="muted" style={{ marginTop: 4 }}>The image URL may be invalid, private, expired, or blocked by the host.</div>
+                              <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                                <a className="btn" href={selectedTable.imageUrl} target="_blank" rel="noreferrer">Open image</a>
+                                <button
+                                  type="button"
+                                  className="btn"
+                                  onClick={() => setImageThumbErrorByTableId((m) => {
+                                    const next = new Map(m)
+                                    next.delete(panelTableId)
+                                    return next
+                                  })}
+                                >
+                                  Retry
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            className="reservationPanel__thumbBtn"
+                            onClick={() => openImageViewer(selectedTable.imageUrl)}
+                            aria-label="View table image"
+                          >
+                            <img
+                              className="reservationPanel__thumb"
+                              src={selectedTable.imageUrl}
+                              alt=""
+                              loading="lazy"
+                              referrerPolicy="no-referrer"
+                              onError={() =>
+                                setImageThumbErrorByTableId((m) => {
+                                  const next = new Map(m)
+                                  next.set(panelTableId, true)
+                                  return next
+                                })
+                              }
+                            />
+                          </button>
+                        )
                       ) : (
                         <div className="muted" style={{ marginTop: 12 }}>
                           No image.
@@ -383,7 +426,8 @@ export default function FloorPage() {
                             <div className="rowCard__title">Active reservation</div>
                             <div className="muted">Customer: {selectedReservation.userEmail || selectedReservation.userId || 'Guest'}</div>
                             <div className="muted">Party: {selectedReservation.partySize || '—'}</div>
-                            <div className="muted">Start: {formatTime(selectedReservation.startTimeDate)}</div>
+                            <div className="muted">Date: {formatDate(selectedReservation.startTimeDate)}</div>
+                            <div className="muted">Start: {formatTime(selectedReservation.startTimeDate)} • End: {formatTime(selectedReservation.endTimeDate)}</div>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center' }}>
                             <span className="badge badge--success">active</span>
@@ -447,31 +491,12 @@ export default function FloorPage() {
         ) : null}
 
         {activeView === 'timeline' ? (
-          <div className="tablesSection" style={{ gridColumn: '1 / -1' }}>
-            <div className="tablesSection__title">TimeLine</div>
-            {timelineReservations.length === 0 ? <div className="muted">No active reservations.</div> : null}
-            <div className="stack" style={{ marginTop: 12 }}>
-              {timelineReservations
-                .slice()
-                .sort((a, b) => (a.startTimeDate?.getTime?.() || 0) - (b.startTimeDate?.getTime?.() || 0))
-                .map((r) => {
-                  const t = tables.find((x) => x.id === r.tableId)
-                  const tableLabel = t?.number ? `Table ${t.number}` : `TableId ${r.tableId}`
-                  return (
-                    <div key={r.id} className="rowCard">
-                      <div>
-                        <div className="rowCard__title">{formatTime(r.startTimeDate)} • {tableLabel}</div>
-                        <div className="muted">Customer: {r.userEmail || r.userId || 'Guest'}</div>
-                        <div className="muted">Party: {r.partySize || '—'}</div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center' }}>
-                        <span className="badge badge--success">active</span>
-                      </div>
-                    </div>
-                  )
-                })}
-            </div>
-          </div>
+          <TableTimeline
+            tables={timelineTables}
+            reservations={timelineReservations}
+            isoDate={timelineIsoDate}
+            onChangeIsoDate={(next) => setTimelineIsoDate(next)}
+          />
         ) : null}
       </div>
     </div>

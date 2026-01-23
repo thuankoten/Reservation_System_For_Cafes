@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { addDoc, collection, query, orderBy, onSnapshot, serverTimestamp } from 'firebase/firestore'
-import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
-import { db, storage } from '../../../shared/firebase'
+import { db } from '../../../shared/firebase'
 
 const STATUS_OPTIONS = [
   { value: 'available', label: 'Free (available)' },
@@ -15,7 +14,7 @@ const FLOOR_OPTIONS = [1, 2, 3]
 
 const PLACEMENT_OPTIONS = [
   { value: 'quiet_zone', label: 'Quiet Zone' },
-  { value: 'window_seat', label: 'Window Seat' },
+  { value: 'photo_spot', label: 'Photo Spot' },
   { value: 'near_power_outlets', label: 'Near power outlets' },
 ]
 
@@ -35,7 +34,7 @@ export default function AdminCreateTablePage() {
   const [floor, setFloor] = useState('1')
   const [status, setStatus] = useState('available')
   const [placement, setPlacement] = useState(PLACEMENT_OPTIONS[0].value)
-  const [imageFile, setImageFile] = useState(null)
+  const [imageUrl, setImageUrl] = useState('')
 
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -94,24 +93,31 @@ export default function AdminCreateTablePage() {
       return
     }
 
+    const imageUrlTrimmed = String(imageUrl || '').trim()
+    let normalizedImageUrl = imageUrlTrimmed
+    if (imageUrlTrimmed) {
+      try {
+        const u = new URL(imageUrlTrimmed)
+        if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+          setError('Image URL must start with http:// or https://')
+          return
+        }
+        normalizedImageUrl = u.toString()
+      } catch {
+        setError('Image URL is not valid')
+        return
+      }
+    }
+
     setSubmitting(true)
     try {
-      let imageUrl = ''
-      if (imageFile) {
-        const safeName = String(imageFile.name || 'table.jpg').replace(/[^a-zA-Z0-9_.-]/g, '_')
-        const path = `table-images/${n}-${Date.now()}-${safeName}`
-        const storageRef = ref(storage, path)
-        await uploadBytes(storageRef, imageFile)
-        imageUrl = await getDownloadURL(storageRef)
-      }
-
       await addDoc(collection(db, 'tables'), {
         number: n,
         seats: s,
         floor: f,
         status,
         placement,
-        imageUrl,
+        imageUrl: normalizedImageUrl,
         updatedAt: serverTimestamp(),
       })
 
@@ -192,12 +198,13 @@ export default function AdminCreateTablePage() {
           </label>
 
           <label className="field">
-            <div className="field__label">Image (jpg/png)</div>
+            <div className="field__label">Image URL</div>
             <input
               className="input"
-              type="file"
-              accept="image/*,.jpg,.jpeg,.png"
-              onChange={(e) => setImageFile(e.target.files?.[0] || null)}
+              type="url"
+              placeholder="https://..."
+              value={imageUrl}
+              onChange={(e) => setImageUrl(e.target.value)}
             />
           </label>
         </form>

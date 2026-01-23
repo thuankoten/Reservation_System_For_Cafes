@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteField,
   deleteDoc,
   doc,
   runTransaction,
@@ -156,6 +157,47 @@ export async function cancelReservation({ db, reservationId, tableId, slotKeys }
   })
 
   await batch.commit()
+}
+
+export async function confirmHoldReservation({ db, reservationId }) {
+  if (!db) throw new Error('Missing Firestore db')
+  if (!reservationId) throw new Error('Missing reservationId')
+
+  const now = new Date()
+  const resRef = doc(db, 'reservations', reservationId)
+
+  await runTransaction(db, async (tx) => {
+    const resSnap = await tx.get(resRef)
+    if (!resSnap.exists()) throw new Error('Reservation not found')
+
+    const r = resSnap.data() || {}
+    const status = String(r.status || '').toLowerCase()
+    if (status !== RESERVATION_STATUS.HOLD) throw new Error('Reservation is not pending')
+
+    const expires = typeof r?.holdExpiresAt?.toDate === 'function' ? r.holdExpiresAt.toDate() : r.holdExpiresAt
+    const expiresAtDate = expires instanceof Date ? expires : null
+    if (!expiresAtDate || expiresAtDate <= now) throw new Error('Reservation hold has expired')
+
+    const tableId = r.tableId
+    const slotKeys = Array.isArray(r.slotKeys) ? r.slotKeys : []
+    if (!tableId) throw new Error('Reservation is missing tableId')
+    if (!slotKeys.length) throw new Error('Reservation is missing slotKeys')
+
+    for (const key of slotKeys) {
+      const slotRef = doc(db, 'tables', tableId, 'slots', key)
+      tx.update(slotRef, {
+        status: RESERVATION_STATUS.CONFIRMED,
+        expiresAt: deleteField(),
+        updatedAt: serverTimestamp(),
+      })
+    }
+
+    tx.update(resRef, {
+      status: RESERVATION_STATUS.CONFIRMED,
+      confirmedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+  })
 }
 
 export async function expireReservation({ db, reservationId }) {

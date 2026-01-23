@@ -283,7 +283,7 @@ export default function OverviewPage() {
               <div className="muted">Great for studying & meetings.</div>
             </div>
             <div className="miniCard">
-              <div className="miniCard__title">Window seats</div>
+              <div className="miniCard__title">Photo spot</div>
               <div className="muted">Limited – reserve early.</div>
             </div>
             <div className="miniCard">

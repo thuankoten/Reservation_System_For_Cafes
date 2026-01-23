@@ -7,6 +7,7 @@ export default function AdminDashboardLayout() {
       <Sidebar role="Administrator" 
       items={[
         {to: '/admin/dashboard/tables', label: 'Tables' },
+        {to: '/admin/dashboard/reservations', label: 'Reservations' },
         {to: '/admin/dashboard/accounts', label: 'Accounts' },
       ]} />
 
