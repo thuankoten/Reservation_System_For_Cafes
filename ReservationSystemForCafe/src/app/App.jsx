@@ -17,8 +17,9 @@ import AdminDashboardLayout from '../features/admin/layout/AdminDashboardLayout.
 import AdminTablesPage from '../features/admin/pages/AdminTablesPage.jsx'
 import AdminCreateTablePage from '../features/admin/pages/AdminCreateTablePage.jsx'
 import AdminAccountsPage from '../features/admin/pages/AdminAccountsPage.jsx'
-import AdminReservationsPage from '../features/admin/pages/AdminReservationsPage.jsx'
 import RequireAuth from '../features/auth/RequireAuth.jsx'
+import AdminReservationPage from '../features/admin/pages/AdminReservationPage.jsx'
+import AdminReservationDetailPage from '../features/admin/pages/AdminReservationDetailPage.jsx'
 
 export default function App() {
   return (
@@ -59,9 +60,10 @@ export default function App() {
         }>
           <Route path="tables" element={<AdminTablesPage />} />
           <Route path="tables/new" element={<AdminCreateTablePage />} />
-          <Route path="reservations" element={<AdminReservationsPage />} />
           <Route index element={<Navigate to="tables" replace />} />
           <Route path="accounts" element={<AdminAccountsPage />} />
+          <Route path="reservations" element={<AdminReservationPage />} />
+          <Route path="reservations/:reservationId" element={<AdminReservationDetailPage />}/>
         </Route>
 
         <Route path="/admin/*" element={<Navigate to="/admin/dashboard" replace />} />
