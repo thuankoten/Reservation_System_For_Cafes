@@ -1,3 +1,4 @@
+[README.md](https://github.com/user-attachments/files/24867427/README.md)
 # Reservation System For Cafes
 
 Ứng dụng web quản lý/đặt chỗ cho quán cà phê, xây dựng với React (Vite) và Firebase (Firestore/Auth). Dự án bao gồm dashboard khách hàng và admin dashboard (quản trị bàn) với giao diện sidebar trái.
