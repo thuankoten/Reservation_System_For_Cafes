@@ -1,1 +1,0 @@
-export { app, auth, db, storage } from './shared/firebase'
