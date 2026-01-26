@@ -1,0 +1,50 @@
+.reservationDetailPage {
+  padding: 24px;
+}
+
+/* Back link */
+.backLink {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-bottom: 16px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  color: #000;
+}
+
+/* Card */
+.reservationDetailCard {
+    margin: 0 auto;
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 600px;
+  width: 100%;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+.detailHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+
+/* Rows */
+.detailRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.detailRow:last-child {
+  border-bottom: none;
+}
+
+.detailRow span:first-child {
+  color: #666;
+}

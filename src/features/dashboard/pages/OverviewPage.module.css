@@ -1,0 +1,51 @@
+.historyCard {
+  margin-top: 20px;
+}
+
+.historyTableContainer {
+  margin-top: 15px;
+  overflow-x: auto;
+}
+
+.historyTable {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.historyTable thead tr {
+  border-bottom: 1px solid #eee;
+  color: #888;
+  font-size: 0.85rem;
+}
+
+.historyTable th {
+  padding: 10px 5px;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.historyTable tbody tr {
+  border-bottom: 1px solid #f9f9f9;
+  font-size: 0.9rem;
+  transition: background-color 0.2s;
+}
+
+.historyTable tbody tr:hover {
+  background-color: #fcfaf8; /* Hiệu ứng hover nhẹ màu nâu cafe */
+}
+
+.historyTable td {
+  padding: 12px 5px;
+  vertical-align: middle;
+}
+
+.statusAlign {
+  text-align: right;
+}
+
+@media (max-width: 600px) {
+  .historyTable {
+    font-size: 0.8rem;
+  }
+}
