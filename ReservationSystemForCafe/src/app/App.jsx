@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { Toaster } from 'react-hot-toast' // THÊM DÒNG NÀY
+import { Toaster } from 'react-hot-toast' 
 import AppLayout from './AppLayout.jsx'
 import AuthPage from '../features/auth/pages/AuthPage.jsx'
 import Login from '../features/auth/pages/Login.jsx'
@@ -27,7 +27,7 @@ import AdminDashboard from '../pages/AdminDashboard.jsx'
 export default function App() {
   return (
     <>
-      {/* Cấu hình thùng chứa thông báo ở góc trên bên phải */}
+      
       <Toaster position="top-right" reverseOrder={false} />
       
       <Routes>
@@ -70,5 +70,58 @@ export default function App() {
         </Route>
       </Routes>
     </>
+  )
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route element={<AppLayout />}>
+        <Route path="/" element={<Navigate to="/dashboard/overview" replace />} />
+
+        <Route path="/auth" element={<AuthPage />}>
+          <Route path="login" element={<Login />} />
+          <Route path="admin-login" element={<AdminLogin />} />
+          <Route path="signup" element={<Signup />} />
+          <Route path="forgot-password" element={<ForgotPassword />} />
+        </Route>
+
+        <Route
+          path="/dashboard"
+          element={<DashboardLayout />}
+        >
+          <Route path="overview" element={<OverviewPage />} />
+          <Route path="profile" element={<ProfilePage />} />
+
+          <Route path="tables" element={<FloorPage />} />
+          <Route path="reservations" element={<ReservationPage />} />
+          <Route path="information" element={<InformationPage />} />
+          <Route path="chat" element={<ChatPage />} />
+
+          <Route path="report" element={<ReportPage />} />
+
+          <Route path="floor" element={<Navigate to="/dashboard/tables" replace />} />
+          <Route path="reservation" element={<Navigate to="/dashboard/reservations" replace />} />
+          <Route index element={<Navigate to="overview" replace />} />
+        </Route>
+
+        <Route path="/admin/dashboard" element={
+          <RequireAuth allowedRoles={['admin', 'system-admin']}>
+            <AdminDashboardLayout />
+          </RequireAuth>
+        }>
+          <Route path="tables" element={<AdminTablesPage />} />
+          <Route path="tables/new" element={<AdminCreateTablePage />} />
+          <Route index element={<Navigate to="tables" replace />} />
+          <Route path="accounts" element={<AdminAccountsPage />} />
+          <Route path="reservations" element={<AdminReservationPage />} />
+          <Route path="reservations/:reservationId" element={<AdminReservationDetailPage />}/>
+        </Route>
+
+        <Route path="/admin/*" element={<Navigate to="/admin/dashboard" replace />} />
+
+        <Route path="*" element={<Navigate to="/dashboard/overview" replace />} />
+      </Route>
+    </Routes>
   )
 }
