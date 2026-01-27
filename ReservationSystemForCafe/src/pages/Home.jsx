@@ -18,7 +18,6 @@ const Home = () => {
           Đặt Bàn Ngay
         </button>
       </section>
-
       
       <section className={styles.features}>
         <div className={styles.featureItem}>

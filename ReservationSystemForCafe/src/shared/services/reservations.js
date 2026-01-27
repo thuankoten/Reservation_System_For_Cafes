@@ -8,7 +8,6 @@ import {
   updateDoc,
   writeBatch,
 } from 'firebase/firestore'
-import { calculateTotalAmount } from '../utils/pricing'
 import { buildDateFromISOAndMinutes, TIMELINE_CONFIG } from '../utils/timeline'
 import { buildSlotKeys, addMinutes } from '../utils/slotKeys'
 
@@ -25,13 +24,7 @@ export function computeReservationTimes({ isoDate, startMinutes, durationMinutes
   return { startTime, endTime }
 }
 
-export function buildReservationPrice({ tableSeats, durationMinutes }) {
-  const totalAmount = calculateTotalAmount({ seats: tableSeats, durationMinutes })
-  if (totalAmount == null) return null
-  return {
-    totalAmount,
-  }
-}
+// Pricing removed from reservation creation to simplify customer flow.
 
 export async function createHoldReservation({
   db,
@@ -46,15 +39,13 @@ export async function createHoldReservation({
   customerEmail,
 }) {
   if (!db) throw new Error('Missing Firestore db')
-  if (!user?.uid) throw new Error('Please sign in to create a reservation')
   if (!table?.id) throw new Error('Please select a table')
 
   const name = String(customerName || '').trim()
   const phone = String(customerPhone || '').trim()
   const email = String(customerEmail || '').trim()
-  if (!name) throw new Error('Please enter your name')
+  // Name is optional; use provided value or keep null. Phone required; email optional.
   if (!phone) throw new Error('Please enter your phone number')
-  if (!email) throw new Error('Please enter your email')
 
   const dur = Number(durationMinutes)
   if (!Number.isFinite(dur) || dur <= 0) throw new Error('Invalid duration')
@@ -62,8 +53,6 @@ export async function createHoldReservation({
   if (dur > TIMELINE_CONFIG.maxDurationMinutes) throw new Error('Duration exceeds max (6h)')
 
   const seats = Number(table.seats)
-  const pricing = buildReservationPrice({ tableSeats: seats, durationMinutes: dur })
-  if (!pricing) throw new Error('Table seats must be 2/4/6/8 to calculate price')
 
   const { startTime, endTime } = computeReservationTimes({
     isoDate,
@@ -74,35 +63,32 @@ export async function createHoldReservation({
   if (Number.isNaN(startTime.getTime())) throw new Error('Invalid start time')
   if (endTime <= startTime) throw new Error('Invalid time range')
 
-  const now = new Date()
-  const holdExpiresAt = new Date(now.getTime() + 5 * 60 * 1000)
-
-  const slotKeys = buildSlotKeys({ startAt: startTime, durationMinutes: dur, stepMinutes: TIMELINE_CONFIG.stepMinutes })
+  // Hold remains valid until the reservation start time; if not confirmed by then, it will be cancelled.
+  const holdExpiresAt = startTime
 
   const reservationsCol = collection(db, 'reservations')
   const reservationRef = doc(reservationsCol)
 
+  const slotKeys = buildSlotKeys({ startAt: startTime, durationMinutes: dur, stepMinutes: TIMELINE_CONFIG.stepMinutes })
+
+  // For HOLD: block slots immediately with HOLD status until start time
   await runTransaction(db, async (tx) => {
     const slotRefs = slotKeys.map((key) => doc(db, 'tables', table.id, 'slots', key))
 
     for (const slotRef of slotRefs) {
       const snap = await tx.get(slotRef)
-
       if (snap.exists()) {
         const data = snap.data() || {}
         const existingExpiresAt = typeof data?.expiresAt?.toDate === 'function' ? data.expiresAt.toDate() : data.expiresAt
-        const isExpired = existingExpiresAt instanceof Date ? existingExpiresAt <= now : false
-
-        if (!isExpired) {
-          throw new Error('This table is not available for the selected time')
-        }
+        const isExpired = existingExpiresAt instanceof Date ? existingExpiresAt <= new Date() : false
+        if (!isExpired) throw new Error('This table is not available for the selected time')
       }
     }
 
     for (const slotRef of slotRefs) {
       tx.set(slotRef, {
         reservationId: reservationRef.id,
-        userId: user.uid,
+        userId: user?.uid ?? null,
         status: RESERVATION_STATUS.HOLD,
         expiresAt: holdExpiresAt,
         startTime,
@@ -112,12 +98,12 @@ export async function createHoldReservation({
     }
 
     tx.set(reservationRef, {
-      userId: user.uid,
-      userEmail: user.email || null,
-      isAnonymous: Boolean(user.isAnonymous),
-      customerName: name,
+      userId: user?.uid ?? null,
+      userEmail: (user?.email || email) || null,
+      isAnonymous: Boolean(user?.isAnonymous) || !user?.uid,
+      customerName: name || null,
       customerPhone: phone,
-      customerEmail: email,
+      customerEmail: email || null,
       tableId: table.id,
       tableNumber: table.number ?? null,
       tableSeats: seats,
@@ -128,7 +114,6 @@ export async function createHoldReservation({
       status: RESERVATION_STATUS.HOLD,
       holdExpiresAt,
       slotKeys,
-      totalAmount: pricing.totalAmount,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     })
@@ -182,6 +167,15 @@ export async function confirmHoldReservation({ db, reservationId }) {
     const slotKeys = Array.isArray(r.slotKeys) ? r.slotKeys : []
     if (!tableId) throw new Error('Reservation is missing tableId')
     if (!slotKeys.length) throw new Error('Reservation is missing slotKeys')
+
+    // Validate existing HOLD slots belong to this reservation, then upgrade to CONFIRMED
+    for (const key of slotKeys) {
+      const slotRef = doc(db, 'tables', tableId, 'slots', key)
+      const slotSnap = await tx.get(slotRef)
+      if (!slotSnap.exists()) throw new Error('Reservation hold has no slots to confirm')
+      const s = slotSnap.data() || {}
+      if (s.reservationId !== reservationId) throw new Error('Selected time is no longer available')
+    }
 
     for (const key of slotKeys) {
       const slotRef = doc(db, 'tables', tableId, 'slots', key)

@@ -69,6 +69,11 @@ export default function AdminAccountsPage() {
   }, [currentUserRole, loadUsers])
 
   const handleToggleStatus = async (userId) => {
+    // Prevent disabling own account
+    if (currentUser && userId === currentUser.uid) {
+      setError('You cannot disable your own account')
+      return
+    }
     try {
       setProcessingId(userId)
       await toggleUserStatus(userId)
@@ -81,6 +86,11 @@ export default function AdminAccountsPage() {
   }
 
   const handleDeleteUser = async (userId) => {
+    // Prevent deleting own account
+    if (currentUser && userId === currentUser.uid) {
+      setError('You cannot delete your own account')
+      return
+    }
     if (!confirm('Are you sure you want to delete this user?')) return
 
     try {
@@ -205,20 +215,30 @@ export default function AdminAccountsPage() {
                       </td>
                       <td>{user.createdAt?.toDate?.()?.toLocaleDateString()}</td>
                       <td>
-                        <button
-                          onClick={() => handleToggleStatus(user.id)}
-                          disabled={processingId === user.id}
-                          className="action-button"
-                        >
-                          {user.status === USER_STATUS.ACTIVE ? 'Disable' : 'Enable'}
-                        </button>
-                        <button
-                          onClick={() => handleDeleteUser(user.id)}
-                          disabled={processingId === user.id}
-                          className="action-button delete"
-                        >
-                          Delete
-                        </button>
+                        {(() => {
+                          const isSelf = currentUser && user.id === currentUser.uid
+                          const disableReason = isSelf ? 'You cannot manage your own account' : ''
+                          return (
+                            <>
+                              <button
+                                onClick={() => handleToggleStatus(user.id)}
+                                disabled={processingId === user.id || isSelf}
+                                className="action-button"
+                                title={disableReason}
+                              >
+                                {user.status === USER_STATUS.ACTIVE ? 'Disable' : 'Enable'}
+                              </button>
+                              <button
+                                onClick={() => handleDeleteUser(user.id)}
+                                disabled={processingId === user.id || isSelf}
+                                className="action-button delete"
+                                title={disableReason}
+                              >
+                                Delete
+                              </button>
+                            </>
+                          )
+                        })()}
                       </td>
                     </tr>
                   ))}

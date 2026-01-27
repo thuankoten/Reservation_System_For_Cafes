@@ -7,12 +7,12 @@ import {
   query,
   where,
 } from 'firebase/firestore'
-import { signInAnonymously } from 'firebase/auth'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
+import { signInAnonymously, signOut } from 'firebase/auth'
+import toast from 'react-hot-toast'
 import { auth, db } from '../../../shared/firebase'
 import { useAuth } from '../../auth/useAuth'
-import { cancelReservation, createHoldReservation, expireReservation } from '../../../shared/services/reservations'
-import { calculateTotalAmount } from '../../../shared/utils/pricing'
+import { cancelReservation, createHoldReservation } from '../../../shared/services/reservations'
 import {
   formatISODate,
   listStartMinutesForDuration,
@@ -31,15 +31,7 @@ function toDate(v) {
   }
 }
 
-function formatCurrencyVND(amount) {
-  const n = Number(amount)
-  if (!Number.isFinite(n)) return '—'
-  try {
-    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(n)
-  } catch {
-    return `${n} VND`
-  }
-}
+// Pricing removed from customer reservation flow.
 
 function getDefaultStartMinutes({ isoDate, durationMinutes }) {
   const dur = Number(durationMinutes)
@@ -77,11 +69,15 @@ function computeDefaultEndMinutes({ startMinutes, durationMinutes }) {
 
 export default function ReservationPage() {
   const { user } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const DRAFT_KEY = 'reservationDraft'
   const [searchParams] = useSearchParams()
   const [initialTableId] = useState(() => searchParams.get('tableId') || '')
   const [tables, setTables] = useState([])
   const [reservations, setReservations] = useState([])
   const [myReservations, setMyReservations] = useState([])
+  const [expandedIds, setExpandedIds] = useState(() => new Set())
 
   const [selectedTableId, setSelectedTableId] = useState('')
   const [partySize, setPartySize] = useState(2)
@@ -107,6 +103,35 @@ export default function ReservationPage() {
 
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  // Hydrate form from draft saved before redirecting to login
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(DRAFT_KEY)
+      if (!raw) return
+      const d = JSON.parse(raw)
+      if (d && typeof d === 'object') {
+        if (d.isoDate) setIsoDate(String(d.isoDate))
+        if (Number.isFinite(Number(d.startMinutes))) setStartMinutes(Number(d.startMinutes))
+        if (Number.isFinite(Number(d.endMinutes))) setEndMinutes(Number(d.endMinutes))
+        if (Number.isFinite(Number(d.partySize))) {
+          setPartySize(Number(d.partySize))
+          setPartySizeTouched(true)
+        }
+        if (typeof d.customerName === 'string') {
+          setCustomerName(d.customerName)
+          setCustomerNameTouched(Boolean(d.customerName))
+        }
+        if (typeof d.customerEmail === 'string') {
+          setCustomerEmail(d.customerEmail)
+          setCustomerEmailTouched(Boolean(d.customerEmail))
+        }
+        if (typeof d.customerPhone === 'string') setCustomerPhone(d.customerPhone)
+        if (typeof d.selectedTableId === 'string') setSelectedTableId(d.selectedTableId)
+      }
+      sessionStorage.removeItem(DRAFT_KEY)
+    } catch {}
+  }, [])
 
   useEffect(() => {
     const qTables = query(collection(db, 'tables'), orderBy('number', 'asc'))
@@ -139,6 +164,9 @@ export default function ReservationPage() {
     return () => unsub()
   }, [])
 
+  // Removed auto anonymous sign-in to prevent re-login after logout
+  // We will only sign in anonymously at booking time when needed.
+
   useEffect(() => {
     if (!user?.uid) return
 
@@ -155,13 +183,14 @@ export default function ReservationPage() {
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
         setMyReservations(rows)
 
+        // Auto-cancel any pending reservations not approved by their start time
         const now = new Date()
         for (const r of rows) {
           const status = String(r.status || '').toLowerCase()
           if (status !== 'hold') continue
-          const expiresAt = toDate(r.holdExpiresAt)
-          if (expiresAt && expiresAt <= now) {
-            expireReservation({ db, reservationId: r.id }).catch(() => {})
+          const holdDeadline = toDate(r.holdExpiresAt)
+          if (holdDeadline && holdDeadline <= now) {
+            cancelReservation({ db, reservationId: r.id, tableId: r.tableId, slotKeys: r.slotKeys }).catch(() => {})
           }
         }
       },
@@ -169,6 +198,14 @@ export default function ReservationPage() {
     )
 
     return () => unsub()
+  }, [user?.uid])
+
+  // Khi sign-out: xoá lịch sử hiển thị để khách không thấy My reservations
+  useEffect(() => {
+    if (!user?.uid) {
+      setMyReservations([])
+      setExpandedIds(new Set())
+    }
   }, [user?.uid])
 
   const customerNameValue = customerNameTouched ? customerName : (user?.displayName || customerName)
@@ -249,10 +286,16 @@ export default function ReservationPage() {
     setPartySize((p) => clampNumber(p, 1, Math.max(1, nextMax)))
   }, [partySizeTouched, selectedTable?.seats])
 
-  const startOptions = useMemo(
-    () => listStartMinutesForDuration({ durationMinutes: TIMELINE_CONFIG.stepMinutes }),
-    []
-  )
+  const startOptions = useMemo(() => {
+    const base = listStartMinutesForDuration({ durationMinutes: TIMELINE_CONFIG.stepMinutes })
+    const today = formatISODate(new Date())
+    if (isoDate !== today) return base
+    const step = TIMELINE_CONFIG.stepMinutes
+    const now = new Date()
+    const currentMinutes = now.getHours() * 60 + now.getMinutes()
+    const earliest = Math.ceil(currentMinutes / step) * step
+    return base.filter((m) => m >= earliest)
+  }, [isoDate])
 
   const endOptions = useMemo(() => {
     const step = TIMELINE_CONFIG.stepMinutes
@@ -289,14 +332,7 @@ export default function ReservationPage() {
     setEndMinutes(computeDefaultEndMinutes({ startMinutes: nextStart, durationMinutes }))
   }
 
-  const pricing = useMemo(() => {
-    if (!selectedTable) return null
-    const seats = Number(selectedTable.seats)
-    const dur = Number(derivedDurationMinutes)
-    const totalAmount = calculateTotalAmount({ seats, durationMinutes: dur })
-    if (totalAmount == null) return null
-    return { totalAmount }
-  }, [derivedDurationMinutes, selectedTable])
+  // Pricing removed
 
   const activeHoldReservation = useMemo(() => {
     const now = new Date()
@@ -309,27 +345,7 @@ export default function ReservationPage() {
     return null
   }, [myReservations])
 
-  const [holdRemainingMs, setHoldRemainingMs] = useState(0)
-  useEffect(() => {
-    if (!activeHoldReservation?.holdExpiresAtDate) return
-
-    const tick = () => {
-      const ms = activeHoldReservation.holdExpiresAtDate.getTime() - Date.now()
-      setHoldRemainingMs(Math.max(0, ms))
-    }
-
-    tick()
-    const id = window.setInterval(tick, 1000)
-    return () => window.clearInterval(id)
-  }, [activeHoldReservation?.holdExpiresAtDate])
-
-  const holdCountdownText = useMemo(() => {
-    if (!holdRemainingMs) return ''
-    const totalSec = Math.ceil(holdRemainingMs / 1000)
-    const mm = Math.floor(totalSec / 60)
-    const ss = totalSec % 60
-    return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
-  }, [holdRemainingMs])
+  // Hold countdown removed
 
   const myReservationRows = useMemo(() => {
     const now = new Date()
@@ -351,20 +367,36 @@ export default function ReservationPage() {
       return
     }
 
+    // Chặn chắc chắn nếu bàn không khả dụng
+    if (isSelectedTableUnavailable) {
+      setError('This table is not available for the selected time')
+      try { toast.error('Selected table is unavailable') } catch {}
+      return
+    }
+
     if (activeHoldReservation) {
       setError('You already have a pending reservation. Please wait for admin confirmation or cancel it.')
       return
     }
-
-    let bookingUser = user
-    if (!bookingUser?.uid) {
+    // Nếu chưa đăng nhập: chuyển sang trang login
+    if (!user?.uid) {
+      // Save current form draft to restore after login
       try {
-        const cred = await signInAnonymously(auth)
-        bookingUser = cred.user
-      } catch (e) {
-        setError(e?.message || 'Failed to start guest session')
-        return
-      }
+        const draft = {
+          selectedTableId,
+          isoDate,
+          startMinutes,
+          endMinutes,
+          partySize,
+          customerName,
+          customerEmail,
+          customerPhone,
+        }
+        sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
+      } catch {}
+      try { toast.error('Vui lòng đăng nhập để đặt bàn') } catch {}
+      navigate('/auth/login', { replace: false, state: { from: location } })
+      return
     }
 
     if (!selectedTable) {
@@ -378,6 +410,16 @@ export default function ReservationPage() {
     }
     if (reservedTableIdsForSelectedRange.has(selectedTable.id)) {
       setError('This table is not available for the selected time')
+      try { toast.error('Selected table is unavailable') } catch {}
+      return
+    }
+
+    // Disallow booking in the past when booking for today
+    const selectedStartDate = buildDateFromISOAndMinutes(isoDate, Number(startMinutes))
+    const now = new Date()
+    if (formatISODate(selectedStartDate) === formatISODate(now) && selectedStartDate <= now) {
+      setError('Start time must be in the future')
+      try { toast.error('Start time must be in the future') } catch {}
       return
     }
 
@@ -408,9 +450,9 @@ export default function ReservationPage() {
 
     setSubmitting(true)
     try {
-      await createHoldReservation({
+      const reservationId = await createHoldReservation({
         db,
-        user: bookingUser,
+        user,
         table: selectedTable,
         isoDate,
         startMinutes,
@@ -420,6 +462,9 @@ export default function ReservationPage() {
         customerPhone,
         customerEmail: customerEmailValue,
       })
+      if (reservationId) {
+        toast.success('Reservation request submitted. Await admin approval.')
+      }
     } catch (e) {
       setError(e?.message || 'Failed to create reservation')
     } finally {
@@ -440,8 +485,6 @@ export default function ReservationPage() {
     <div className="stack">
       <div className="card">
         <h2 className="pageTitle">Reservation</h2>
-        <div className="muted">Reserve request (pending admin confirmation). Expires in 5 minutes.</div>
-
         <div className="formGrid" style={{ marginTop: 12 }}>
           <label className="field">
             <div className="field__label">Name</div>
@@ -579,17 +622,10 @@ export default function ReservationPage() {
             <div className="kv__k">End time</div>
             <div className="kv__v">{minutesToTimeLabel(Number(endMinutes))}</div>
           </div>
-          <div className="kv__row">
-            <div className="kv__k">Total</div>
-            <div className="kv__v">{pricing ? formatCurrencyVND(pricing.totalAmount) : '—'}</div>
-          </div>
+          {/* Total amount removed */}
         </div>
 
-        {activeHoldReservation ? (
-          <div className="muted" style={{ marginTop: 12 }}>
-            Pending approval • expires in <b>{holdCountdownText}</b>
-          </div>
-        ) : null}
+        {/* Pending approval countdown removed */}
 
         {error ? <div className="error" style={{ marginTop: 12 }}>{error}</div> : null}
       </div>
@@ -597,15 +633,46 @@ export default function ReservationPage() {
       <div className="card">
         <h3 style={{ marginTop: 0 }}>My reservations</h3>
         <div className="stack">
-          {!user ? <div className="muted">Sign in to see your reservation history on this device.</div> : null}
-          {user && myReservations.length === 0 ? <div className="muted">No reservations yet.</div> : null}
-          {myReservationRows.map((r) => (
-            <div key={r.id} className="rowCard">
+          {!user || user?.isAnonymous ? <div className="muted">Sign in to see your reservation history on this device.</div> : null}
+          {user && !user.isAnonymous && myReservations.length === 0 ? <div className="muted">No reservations yet.</div> : null}
+          {user && !user.isAnonymous ? myReservationRows.map((r) => (
+            <div
+              key={r.id}
+              className="rowCard"
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                setExpandedIds((prev) => {
+                  const next = new Set(prev)
+                  if (next.has(r.id)) next.delete(r.id)
+                  else next.add(r.id)
+                  return next
+                })
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  setExpandedIds((prev) => {
+                    const next = new Set(prev)
+                    if (next.has(r.id)) next.delete(r.id)
+                    else next.add(r.id)
+                    return next
+                  })
+                }
+              }}
+            >
               <div>
                 <div className="rowCard__title">Table: {r.tableNumber ?? r.tableId}</div>
                 <div className="muted">Party size: {r.partySize ?? '—'}</div>
                 <div className="muted">Time: {r._startTime ? r._startTime.toLocaleString() : '—'} → {r._endTime ? r._endTime.toLocaleString() : '—'}</div>
                 <div className="muted">Status: {r._statusLabel}</div>
+                {expandedIds.has(r.id) ? (
+                  <div className="kv" style={{ marginTop: 8 }}>
+                    <div className="kv__row"><div className="kv__k">Name</div><div className="kv__v">{r.customerName ?? '—'}</div></div>
+                    <div className="kv__row"><div className="kv__k">Phone</div><div className="kv__v">{r.customerPhone ?? '—'}</div></div>
+                    <div className="kv__row"><div className="kv__k">Email</div><div className="kv__v">{r.customerEmail ?? r.userEmail ?? '—'}</div></div>
+                  </div>
+                ) : null}
               </div>
               <div>
                 {['hold', 'confirmed'].includes(String(r._status || '').toLowerCase()) ? (
@@ -615,7 +682,7 @@ export default function ReservationPage() {
                 ) : null}
               </div>
             </div>
-          ))}
+          )) : null}
         </div>
       </div>
     </div>

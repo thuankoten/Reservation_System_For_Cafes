@@ -180,20 +180,33 @@ export default function AdminTablesPage() {
   const timelineTables = useMemo(() => {
     return rows
       .filter((t) => floorIdForTable(t) === activeFloor)
+      .filter((t) => {
+        const hasRes = reservationByTableId.has(t.id)
+        const status = normalizedStatus(t.status)
+        const effective = hasRes ? 'reserved' : status
+        if (activeStatus === 'all') return true
+        return effective === activeStatus
+      })
       .slice()
       .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
-  }, [activeFloor, rows])
+  }, [activeFloor, activeStatus, reservationByTableId, rows])
 
   const timelineReservations = useMemo(() => {
     return activeReservations.filter((r) => {
       const t = rows.find((x) => x.id === r.tableId)
       if (!t) return false
-      if (floorIdForTable(t) !== activeFloor) return false
-      if (activeStatus === 'all') return true
-      if (activeStatus === 'reserved') return true
-      return false
+      return floorIdForTable(t) === activeFloor
     })
-  }, [activeFloor, activeReservations, activeStatus, rows])
+  }, [activeFloor, activeReservations, rows])
+
+  const occupiedTableIdsForFloor = useMemo(() => {
+    const set = new Set()
+    for (const t of rows) {
+      if (floorIdForTable(t) !== activeFloor) continue
+      if (normalizedStatus(t.status) === 'occupied') set.add(t.id)
+    }
+    return set
+  }, [activeFloor, rows])
 
   const selectedRow = useMemo(() => {
     if (!selectedTableId) return null
@@ -454,6 +467,8 @@ export default function AdminTablesPage() {
               reservations={timelineReservations}
               isoDate={timelineIsoDate}
               onChangeIsoDate={(next) => setTimelineIsoDate(next)}
+              onOpenReservation={(id) => navigate(`/admin/dashboard/reservations/${id}`)}
+              occupiedTableIds={occupiedTableIdsForFloor}
             />
           ) : null}
         </div>

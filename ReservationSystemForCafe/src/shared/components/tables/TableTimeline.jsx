@@ -6,7 +6,7 @@ function minutesFromMidnight(d) {
   return d.getHours() * 60 + d.getMinutes()
 }
 
-export default function TableTimeline({ tables, reservations, isoDate, onChangeIsoDate }) {
+export default function TableTimeline({ tables, reservations, isoDate, onChangeIsoDate, onOpenReservation, occupiedTableIds }) {
   const timelineReservationsForDay = useMemo(() => {
     return reservations.filter((r) => {
       if (!r?.startTimeDate) return false
@@ -69,6 +69,11 @@ export default function TableTimeline({ tables, reservations, isoDate, onChangeI
           onChange={(e) => onChangeIsoDate && onChangeIsoDate(e.target.value)}
           style={{ maxWidth: 180 }}
         />
+        <div className="ganttLegend" aria-label="Timeline status legend" style={{ marginLeft: 12 }}>
+          <div className="ganttLegend__item"><span className="ganttLegend__swatch swatch--confirmed" />Confirmed</div>
+          <div className="ganttLegend__item"><span className="ganttLegend__swatch swatch--hold" />Pending (Hold)</div>
+          <div className="ganttLegend__item"><span className="ganttLegend__swatch swatch--occupied" />Occupied</div>
+        </div>
       </div>
 
       {timelineReservationsForDay.length === 0 ? <div className="muted" style={{ marginTop: 12 }}>No active reservations.</div> : null}
@@ -86,11 +91,20 @@ export default function TableTimeline({ tables, reservations, isoDate, onChangeI
         <div className="ganttBody">
           {tables.map((t) => {
             const bars = timelineBarsByTableId.get(t.id) || []
+            const isOccupied = occupiedTableIds instanceof Set ? occupiedTableIds.has(t.id) : false
 
             return (
               <div key={t.id} className="ganttRow">
-                <div className="ganttLabelCell">{t.number ?? '—'}</div>
+                <div className="ganttLabelCell">Table {t.number ?? '—'}</div>
                 <div className="ganttTrack" aria-label={`Timeline for table ${t.number ?? t.id}`}>
+                  {isOccupied ? (
+                    <div
+                      className="ganttBar ganttBar--occupied"
+                      style={{ left: 0, width: slotCount * cellWidthPx, opacity: 0.25 }}
+                      title={`Table ${t.number ?? t.id} • Occupied`}
+                      aria-hidden="true"
+                    />
+                  ) : null}
                   {bars.map((r) => {
                     const startM = minutesFromMidnight(r.startTimeDate)
                     const endM = minutesFromMidnight(r.endTimeDate)
@@ -103,11 +117,14 @@ export default function TableTimeline({ tables, reservations, isoDate, onChangeI
                     const width = Math.max(cellWidthPx, (safeEnd - safeStart) * cellWidthPx)
                     const kind = String(r._status || '').toLowerCase() === 'hold' ? 'hold' : 'confirmed'
                     return (
-                      <div
+                      <button
                         key={r.id}
+                        type="button"
                         className={`ganttBar ganttBar--${kind}`}
-                        style={{ left, width }}
-                        title={`${minutesToTimeLabel(startM)} - ${minutesToTimeLabel(endM)}`}
+                        style={{ left, width, cursor: onOpenReservation ? 'pointer' : 'default' }}
+                        title={`Table ${t.number ?? t.id} • ${minutesToTimeLabel(startM)} - ${minutesToTimeLabel(endM)}`}
+                        onClick={() => onOpenReservation && onOpenReservation(r.id)}
+                        aria-label={`Reservation ${r.id} ${minutesToTimeLabel(startM)} - ${minutesToTimeLabel(endM)}`}
                       />
                     )
                   })}

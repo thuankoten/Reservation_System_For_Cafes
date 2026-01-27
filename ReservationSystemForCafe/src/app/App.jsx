@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { Toaster } from 'react-hot-toast' // THÊM DÒNG NÀY
+import { Toaster } from 'react-hot-toast'
 import AppLayout from './AppLayout.jsx'
 import AuthPage from '../features/auth/pages/AuthPage.jsx'
 import Login from '../features/auth/pages/Login.jsx'
@@ -27,7 +27,6 @@ import AdminDashboard from '../pages/AdminDashboard.jsx'
 export default function App() {
   return (
     <>
-      {/* Cấu hình thùng chứa thông báo ở góc trên bên phải */}
       <Toaster position="top-right" reverseOrder={false} />
       
       <Routes>

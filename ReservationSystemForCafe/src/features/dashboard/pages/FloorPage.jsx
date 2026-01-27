@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore'
 import { useNavigate } from 'react-router-dom'
 import { db } from '../../../shared/firebase'
@@ -25,6 +25,7 @@ export default function FloorPage() {
   const [error, setError] = useState('')
   const [reservations, setReservations] = useState([])
   const [reservationsError, setReservationsError] = useState('')
+  const asideRef = useRef(null)
 
   useEffect(() => {
     const qTables = query(collection(db, 'tables'), orderBy('number', 'asc'))
@@ -103,9 +104,8 @@ export default function FloorPage() {
       return { ...r, _status: status, startTimeDate, endTimeDate, _holdExpiresAt: holdExpiresAt }
     })
     .filter((r) => {
-      if (r._status === 'confirmed') return true
-      if (r._status === 'hold') return r._holdExpiresAt && r._holdExpiresAt > now
-      return false
+      // Only confirmed reservations mark tables as reserved for customers
+      return r._status === 'confirmed'
     })
 
   const reservationByTableId = new Map()
@@ -152,6 +152,20 @@ export default function FloorPage() {
     setSelectedTableId(tableId)
     setDetailsOpen(true)
   }
+
+  // Close reservation panel when clicking anywhere outside it
+  useEffect(() => {
+    if (!detailsOpen) return
+    const onDocMouseDown = (e) => {
+      const el = asideRef.current
+      if (!el) return
+      if (el.contains(e.target)) return
+      // Clicked outside the panel; close it
+      closeDetails()
+    }
+    document.addEventListener('mousedown', onDocMouseDown)
+    return () => document.removeEventListener('mousedown', onDocMouseDown)
+  }, [detailsOpen])
 
   const panelTableId = detailsTableId
   const selectedTable = panelTableId ? tables.find((t) => t.id === panelTableId) || null : null
@@ -215,13 +229,6 @@ export default function FloorPage() {
             onClick={() => setActiveView('map')}
           >
             Table Map
-          </button>
-          <button
-            type="button"
-            className={`tabBtn ${activeView === 'timeline' ? 'tabBtn--active' : ''}`}
-            onClick={() => setActiveView('timeline')}
-          >
-            TimeLine
           </button>
         </div>
 
@@ -308,6 +315,7 @@ export default function FloorPage() {
 
             {panelTableId ? (
               <aside
+                ref={asideRef}
                 className={`tablesAside ${detailsOpen ? 'tablesAside--open' : 'tablesAside--closed'}`}
                 aria-label="Table details"
               >
@@ -330,7 +338,7 @@ export default function FloorPage() {
                       <button
                         type="button"
                         className="brandButton"
-                        disabled={!detailsOpen || !panelTableId}
+                        disabled={!detailsOpen || !panelTableId || !selectedTable || (selectedReservation || normalizedStatus(selectedTable.status) !== 'free')}
                         onClick={() =>
                           panelTableId && navigate(`/dashboard/reservations?tableId=${encodeURIComponent(panelTableId)}`)
                         }
@@ -420,24 +428,6 @@ export default function FloorPage() {
                         </div>
                       )}
 
-                      {selectedReservation ? (
-                        <div className="rowCard" style={{ marginTop: 12 }}>
-                          <div>
-                            <div className="rowCard__title">Active reservation</div>
-                            <div className="muted">Customer: {selectedReservation.userEmail || selectedReservation.userId || 'Guest'}</div>
-                            <div className="muted">Party: {selectedReservation.partySize || '—'}</div>
-                            <div className="muted">Date: {formatDate(selectedReservation.startTimeDate)}</div>
-                            <div className="muted">Start: {formatTime(selectedReservation.startTimeDate)} • End: {formatTime(selectedReservation.endTimeDate)}</div>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center' }}>
-                            <span className="badge badge--success">active</span>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="muted" style={{ marginTop: 12 }}>
-                          No active reservations for this table.
-                        </div>
-                      )}
                     </div>
                   )}
                 </section>
@@ -490,14 +480,7 @@ export default function FloorPage() {
           </div>
         ) : null}
 
-        {activeView === 'timeline' ? (
-          <TableTimeline
-            tables={timelineTables}
-            reservations={timelineReservations}
-            isoDate={timelineIsoDate}
-            onChangeIsoDate={(next) => setTimelineIsoDate(next)}
-          />
-        ) : null}
+        {/* Customer view: timeline hidden to avoid exposing active reservations */}
       </div>
     </div>
   )
