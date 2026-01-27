@@ -50,6 +50,20 @@
   color: #999;
   cursor: not-allowed;
 }
+.filterBtn {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid #ddd;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.filterBtn.active {
+  background: #000;
+  color: #fff;
+  border-color: #000;
+}
 
 /* Mobile */
 @media (max-width: 480px) {

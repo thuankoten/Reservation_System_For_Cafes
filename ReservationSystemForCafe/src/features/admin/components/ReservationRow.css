@@ -1,13 +1,21 @@
 .reservationRow {
   display: flex;
   justify-content: space-between;
-  padding: 12px;
+  padding: 14px;
   border: 1px solid #ddd;
-  border-radius: 6px;
+  border-radius: 8px;
+  background: #fff;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.reservationRow:hover {
+  background: #f9f9f9;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 .reservationTitle {
   font-weight: 600;
+  margin-bottom: 4px;
 }
 
 .reservationActions {
