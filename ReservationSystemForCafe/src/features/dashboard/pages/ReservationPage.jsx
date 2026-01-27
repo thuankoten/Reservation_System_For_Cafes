@@ -7,8 +7,8 @@ import {
   query,
   where,
 } from 'firebase/firestore'
-import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
-import { signInAnonymously, signOut } from 'firebase/auth'
+import { useSearchParams } from 'react-router-dom'
+import { signInAnonymously, updateProfile } from 'firebase/auth'
 import { showErrorAlert } from '../../../shared/utils/errorAlert'
 import { auth, db } from '../../../shared/firebase'
 import { useAuth } from '../../auth/useAuth'
@@ -68,9 +68,7 @@ function computeDefaultEndMinutes({ startMinutes, durationMinutes }) {
 }
 
 export default function ReservationPage() {
-  const { user } = useAuth()
-  const navigate = useNavigate()
-  const location = useLocation()
+  const { user, refreshUser } = useAuth()
   const DRAFT_KEY = 'reservationDraft'
   const [searchParams] = useSearchParams()
   const [initialTableId] = useState(() => searchParams.get('tableId') || '')
@@ -102,7 +100,6 @@ export default function ReservationPage() {
   const [customerEmail, setCustomerEmail] = useState('')
   const [customerEmailTouched, setCustomerEmailTouched] = useState(false)
 
-  const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   // Hydrate form from draft saved before redirecting to login
@@ -131,7 +128,9 @@ export default function ReservationPage() {
         if (typeof d.selectedTableId === 'string') setSelectedTableId(d.selectedTableId)
       }
       sessionStorage.removeItem(DRAFT_KEY)
-    } catch {}
+    } catch {
+      // no-op
+    }
   }, [])
 
   useEffect(() => {
@@ -149,7 +148,9 @@ export default function ReservationPage() {
           return ''
         })
       },
-      (e) => setError(e?.message || 'Failed to load tables')
+      (e) => {
+        showErrorAlert(e?.message || 'Failed to load tables')
+      }
     )
 
     return () => unsub()
@@ -191,11 +192,11 @@ export default function ReservationPage() {
           if (status !== 'hold') continue
           const holdDeadline = toDate(r.holdExpiresAt)
           if (holdDeadline && holdDeadline <= now) {
-            cancelReservation({ db, reservationId: r.id, tableId: r.tableId, slotKeys: r.slotKeys }).catch(() => {})
+            cancelReservation({ db, reservationId: r.id, tableId: r.tableId, slotKeys: r.slotKeys }).catch(() => null)
           }
         }
       },
-      (e) => setError(e?.message || 'Failed to load reservations')
+      (e) => showErrorAlert(e?.message || 'Failed to load reservations')
     )
 
     return () => unsub()
@@ -363,56 +364,50 @@ export default function ReservationPage() {
   }, [myReservations])
 
   async function createReservation() {
-    setError('')
     if (!selectedTableId) {
-      setError('Please select a table')
+      showErrorAlert('Please select a table')
       return
     }
 
     // Chặn chắc chắn nếu bàn không khả dụng
     if (isSelectedTableUnavailable) {
-      setError('This table is not available for the selected time')
       showErrorAlert('Selected table is unavailable')
       return
     }
 
     if (activeHoldReservation) {
-      setError('You already have a pending reservation. Please wait for admin confirmation or cancel it.')
+      showErrorAlert('You already have a pending reservation. Please wait for admin confirmation or cancel it.')
       return
     }
-    // Nếu chưa đăng nhập: chuyển sang trang login
-    if (!user?.uid) {
-      // Save current form draft to restore after login
+    // Guest booking: if not signed-in, sign in anonymously and continue
+    let bookingUser = user
+    if (!bookingUser?.uid) {
       try {
-        const draft = {
-          selectedTableId,
-          isoDate,
-          startMinutes,
-          endMinutes,
-          partySize,
-          customerName,
-          customerEmail,
-          customerPhone,
+        await signInAnonymously(auth)
+        bookingUser = auth.currentUser
+
+        if (bookingUser?.isAnonymous && customerNameValue && !bookingUser.displayName) {
+          await updateProfile(bookingUser, { displayName: String(customerNameValue).trim() })
+          bookingUser = auth.currentUser
+          await refreshUser?.()
         }
-        sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
-      } catch {}
-      showErrorAlert('Vui lòng đăng nhập để đặt bàn')
-      navigate('/auth/login', { replace: false, state: { from: location } })
-      return
+      } catch {
+        showErrorAlert('Không thể tạo phiên đặt bàn (anonymous). Vui lòng thử lại.')
+        return
+      }
     }
 
     if (!selectedTable) {
-      setError('Selected table not found')
+      showErrorAlert('Selected table not found')
       return
     }
 
     if (String(selectedTable.status || 'available').toLowerCase() === 'occupied') {
-      setError('Selected table is occupied')
+      showErrorAlert('Selected table is occupied')
       return
     }
     if (reservedTableIdsForSelectedRange.has(selectedTable.id)) {
-      setError('This table is not available for the selected time')
-      try { toast.error('Selected table is unavailable') } catch {}
+      showErrorAlert('This table is not available for the selected time')
       return
     }
 
@@ -420,33 +415,32 @@ export default function ReservationPage() {
     const selectedStartDate = buildDateFromISOAndMinutes(isoDate, Number(startMinutes))
     const now = new Date()
     if (formatISODate(selectedStartDate) === formatISODate(now) && selectedStartDate <= now) {
-      setError('Start time must be in the future')
       showErrorAlert('Start time must be in the future')
       return
     }
 
     const dur = Number(derivedDurationMinutes)
     if (!Number.isFinite(dur) || dur <= 0) {
-      setError('Invalid time range')
+      showErrorAlert('Invalid time range')
       return
     }
     if (dur % TIMELINE_CONFIG.stepMinutes !== 0) {
-      setError('Time must be in 30-minute blocks')
+      showErrorAlert('Time must be in 30-minute blocks')
       return
     }
     if (dur > TIMELINE_CONFIG.maxDurationMinutes) {
-      setError('Duration exceeds max (6h)')
+      showErrorAlert('Duration exceeds max (6h)')
       return
     }
 
     const seats = Number(selectedTable.seats)
     const party = Number(partySize)
     if (!Number.isFinite(party) || party < 1) {
-      setError('Party size must be at least 1')
+      showErrorAlert('Party size must be at least 1')
       return
     }
     if (Number.isFinite(seats) && Number.isFinite(party) && party > seats + 1) {
-      setError('Party size exceeds max allowed (seats + 1)')
+      showErrorAlert('Party size exceeds max allowed (seats + 1)')
       return
     }
 
@@ -454,7 +448,7 @@ export default function ReservationPage() {
     try {
       const reservationId = await createHoldReservation({
         db,
-        user,
+        user: bookingUser,
         table: selectedTable,
         isoDate,
         startMinutes,
@@ -472,18 +466,17 @@ export default function ReservationPage() {
         setSelectedTableId('')
       }
     } catch (e) {
-      setError(e?.message || 'Failed to create reservation')
+      showErrorAlert(e?.message || 'Failed to create reservation')
     } finally {
       setSubmitting(false)
     }
   }
 
   async function onCancelReservation(reservationId, tableId, slotKeys) {
-    setError('')
     try {
       await cancelReservation({ db, reservationId, tableId, slotKeys })
     } catch (e) {
-      setError(e?.message || 'Failed to cancel reservation')
+      showErrorAlert(e?.message || 'Failed to cancel reservation')
     }
   }
 

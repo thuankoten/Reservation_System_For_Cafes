@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../../../shared/firebase'; // Đảm bảo đường dẫn này đúng tới file firebase.js
-import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 
 const History = () => {
   const [history, setHistory] = useState([]);

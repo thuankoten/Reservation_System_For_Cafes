@@ -5,7 +5,7 @@ import { db } from '../../../shared/firebase'
 import { useAuth } from '../../auth/useAuth'
 import { formatISODate } from '../../../shared/utils/timeline'
 import TableMap from '../../../shared/components/tables/TableMap'
-import TableTimeline from '../../../shared/components/tables/TableTimeline'
+import ReservationPanel from '../../../shared/components/reservations/ReservationPanel'
 import { showErrorAlert } from '../../../shared/utils/errorAlert'
 
 export default function FloorPage() {
@@ -15,7 +15,6 @@ export default function FloorPage() {
   const [activeView, setActiveView] = useState('map')
   const [activeStatus, setActiveStatus] = useState('all')
   const [activeFloor, setActiveFloor] = useState(1)
-  const [timelineIsoDate, setTimelineIsoDate] = useState(() => formatISODate(new Date()))
   const [selectedTableId, setSelectedTableId] = useState('')
   const [detailsTableId, setDetailsTableId] = useState('')
   const [detailsOpen, setDetailsOpen] = useState(false)
@@ -23,9 +22,7 @@ export default function FloorPage() {
   const [imageViewerSrc, setImageViewerSrc] = useState('')
   const [imageViewerZoom, setImageViewerZoom] = useState(1)
   const [imageThumbErrorByTableId, setImageThumbErrorByTableId] = useState(() => new Map())
-  const [error, setError] = useState('')
   const [reservations, setReservations] = useState([])
-  const [reservationsError, setReservationsError] = useState('')
   const asideRef = useRef(null)
 
   useEffect(() => {
@@ -33,12 +30,10 @@ export default function FloorPage() {
     const unsub = onSnapshot(
       qTables,
       (snap) => {
-        setError('')
         setTables(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
       },
       (e) => {
         const msg = e?.message || 'Failed to load tables'
-        setError(msg)
         showErrorAlert(msg)
       }
     )
@@ -51,13 +46,11 @@ export default function FloorPage() {
     const unsub = onSnapshot(
       q,
       (snap) => {
-        setReservationsError('')
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
         setReservations(rows)
       },
       (e) => {
         const msg = e?.message || 'Failed to load reservations'
-        setReservationsError(msg)
         showErrorAlert(msg)
       }
     )
@@ -94,16 +87,6 @@ export default function FloorPage() {
     }
   }
 
-  const formatDate = (d) => {
-    if (!d) return '—'
-    try {
-      return new Intl.DateTimeFormat(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
-    } catch {
-      return d.toISOString?.().slice(0, 10) || String(d)
-    }
-  }
-
-  const now = new Date()
   const activeReservations = reservations
     .map((r) => {
       const status = String(r.status || '').toLowerCase()
@@ -211,23 +194,6 @@ export default function FloorPage() {
     setImageViewerZoom(1)
   }
 
-  const filteredReservations = activeReservations.filter(() => {
-    if (activeStatus === 'all') return true
-    if (activeStatus === 'reserved') return true
-    return false
-  })
-
-  const timelineReservations = filteredReservations.filter((r) => {
-    const t = tables.find((x) => x.id === r.tableId)
-    if (!t) return false
-    return floorIdForTable(t) === activeFloor
-  })
-
-  const timelineTables = tables
-    .filter((t) => floorIdForTable(t) === activeFloor)
-    .slice()
-    .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
-
   return (
     <div className={activeView === 'map' ? 'card tablesCard tablesCard--map' : 'card'}>
       <div className="tablesTop">
@@ -328,14 +294,21 @@ export default function FloorPage() {
                 aria-label="Table details"
                 style={{ maxHeight: '80vh', overflowY: 'auto' }}
               >
-                <section className="reservationPanel" aria-label="Reservation Details">
-                  <header className="reservationPanel__header">
-                    <div>
-                      <div className="reservationPanel__title">Reservation Details</div>
-                      <div className="reservationPanel__subtitle">Selected table information</div>
-                    </div>
-
-                    <div className="reservationPanel__actions">
+                <ReservationPanel
+                  title="Reservation Details"
+                  subtitle="Selected table information"
+                  table={selectedTable}
+                  floorLabel={selectedTable ? (selectedTable.floor || floorIdForTable(selectedTable)) : ''}
+                  statusLabel={
+                    selectedTable ? (
+                      <span className={`badge badge--neutral`}>
+                        {String(selectedReservation ? 'reserved' : normalizedStatus(selectedTable.status)).toUpperCase()}
+                      </span>
+                    ) : null
+                  }
+                  placementLabel={selectedTable ? placementLabel(selectedTable.placement) : ''}
+                  headerActions={
+                    <>
                       <button
                         type="button"
                         className="detailsCollapseBtn"
@@ -354,115 +327,48 @@ export default function FloorPage() {
                       >
                         Reserve
                       </button>
-                    </div>
-                  </header>
-
-                  {!selectedTable ? (
-                    <div className="reservationPanel__empty">Select a table to view details.</div>
-                  ) : (
-                    <div className="reservationPanel__body">
-                      <div className="kv">
-                        <div className="kv__row">
-                          <div className="kv__k">Table</div>
-                          <div className="kv__v">{selectedTable.number}</div>
-                        </div>
-                        <div className="kv__row">
-                          <div className="kv__k">Floor</div>
-                          <div className="kv__v">{selectedTable.floor || floorIdForTable(selectedTable)}</div>
-                        </div>
-                        <div className="kv__row">
-                          <div className="kv__k">Seats</div>
-                          <div className="kv__v">{selectedTable.seats || '—'}</div>
-                        </div>
-                        <div className="kv__row">
-                          <div className="kv__k">Status</div>
-                          <div className="kv__v">
-                            <span className={`badge badge--neutral`}>{String(selectedReservation ? 'reserved' : normalizedStatus(selectedTable.status)).toUpperCase()}</span>
-                          </div>
-                        </div>
-                        <div className="kv__row">
-                          <div className="kv__k">Placement</div>
-                          <div className="kv__v">{placementLabel(selectedTable.placement)}</div>
+                    </>
+                  }
+                  extraCard={(() => {
+                    const todayIso = formatISODate(new Date())
+                    const busy = activeReservations
+                      .filter((r) => r.tableId === panelTableId)
+                      .filter((r) => r.startTimeDate && formatISODate(r.startTimeDate) === todayIso)
+                      .slice()
+                      .sort((a, b) => (a.startTimeDate?.getTime?.() || 0) - (b.startTimeDate?.getTime?.() || 0))
+                    return busy.length > 0 ? (
+                      <div className="rowCard" style={{ marginTop: 12 }}>
+                        <div className="rowCard__title">Busy times today</div>
+                        <div className="muted" style={{ marginTop: 4 }}>You can still book other free hours.</div>
+                        <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          {busy.map((r) => (
+                            <span key={r.id} className="badge badge--neutral">
+                              {formatTime(r.startTimeDate)} – {formatTime(r.endTimeDate)}
+                            </span>
+                          ))}
                         </div>
                       </div>
-
-                      {/* Busy times today (confirmed only) to help users pick another hour */}
-                      {(() => {
-                        const todayIso = formatISODate(new Date())
-                        const busy = activeReservations
-                          .filter((r) => r.tableId === panelTableId)
-                          .filter((r) => r.startTimeDate && formatISODate(r.startTimeDate) === todayIso)
-                          .slice()
-                          .sort((a, b) => (a.startTimeDate?.getTime?.() || 0) - (b.startTimeDate?.getTime?.() || 0))
-                        return busy.length > 0 ? (
-                          <div className="rowCard" style={{ marginTop: 12 }}>
-                            <div className="rowCard__title">Busy times today</div>
-                            <div className="muted" style={{ marginTop: 4 }}>You can still book other free hours.</div>
-                            <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                              {busy.map((r) => (
-                                <span key={r.id} className="badge badge--neutral">
-                                  {formatTime(r.startTimeDate)} – {formatTime(r.endTimeDate)}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null
-                      })()}
-
-                      {selectedTable.imageUrl ? (
-                        selectedTableImageError ? (
-                          <div className="rowCard" style={{ marginTop: 12, padding: 12 }}>
-                            <div>
-                              <div className="rowCard__title">Image failed to load</div>
-                              <div className="muted" style={{ marginTop: 4 }}>The image URL may be invalid, private, expired, or blocked by the host.</div>
-                              <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                                <a className="btn" href={selectedTable.imageUrl} target="_blank" rel="noreferrer">Open image</a>
-                                <button
-                                  type="button"
-                                  className="btn"
-                                  onClick={() => setImageThumbErrorByTableId((m) => {
-                                    const next = new Map(m)
-                                    next.delete(panelTableId)
-                                    return next
-                                  })}
-                                >
-                                  Retry
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            className="reservationPanel__thumbBtn"
-                            onClick={() => openImageViewer(selectedTable.imageUrl)}
-                            aria-label="View table image"
-                          >
-                            <img
-                              className="reservationPanel__thumb"
-                              src={selectedTable.imageUrl}
-                              alt=""
-                              loading="lazy"
-                              referrerPolicy="no-referrer"
-                              onError={() =>
-                                setImageThumbErrorByTableId((m) => {
-                                  const next = new Map(m)
-                                  next.set(panelTableId, true)
-                                  return next
-                                })
-                              }
-                            />
-                          </button>
-                        )
-                      ) : (
-                        <div className="muted" style={{ marginTop: 12 }}>
-                          No image.
-                        </div>
-                      )}
-
-                    </div>
-                  )}
-                </section>
+                    ) : null
+                  })()}
+                  showImage
+                  imageUrl={selectedTable?.imageUrl}
+                  imageError={selectedTableImageError}
+                  onOpenImage={() => selectedTable?.imageUrl && openImageViewer(selectedTable.imageUrl)}
+                  onImageError={() =>
+                    setImageThumbErrorByTableId((m) => {
+                      const next = new Map(m)
+                      next.set(panelTableId, true)
+                      return next
+                    })
+                  }
+                  onRetryImage={() =>
+                    setImageThumbErrorByTableId((m) => {
+                      const next = new Map(m)
+                      next.delete(panelTableId)
+                      return next
+                    })
+                  }
+                />
               </aside>
             ) : null}
           </div>

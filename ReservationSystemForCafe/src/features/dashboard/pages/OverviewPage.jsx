@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { collection, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore'
+import { updateProfile } from 'firebase/auth'
 import { db } from '../../../shared/firebase'
+import { auth } from '../../../shared/firebase'
 import { useAuth } from '../../auth/useAuth'
 import styles from './OverviewPage.module.css'
 
@@ -30,9 +32,12 @@ function formatDateTime(d) {
 
 export default function OverviewPage() {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, refreshUser } = useAuth()
   const [history, setHistory] = useState([])
-  
+  const [namePromptOpen, setNamePromptOpen] = useState(false)
+  const [pendingName, setPendingName] = useState('')
+  const [savingName, setSavingName] = useState(false)
+
   // Hàm lấy lời chào theo thời gian (Sáng, Chiều, Tối)
   const getGreeting = () => {
     const hour = new Date().getHours()
@@ -44,6 +49,7 @@ export default function OverviewPage() {
 
   useEffect(() => {
     if (!user?.uid) return
+
     const q = query(
       collection(db, 'reservations'),
       where('userId', '==', user.uid),
@@ -56,6 +62,30 @@ export default function OverviewPage() {
     return () => unsub()
   }, [user?.uid])
 
+  useEffect(() => {
+    const isAnon = Boolean(user?.isAnonymous)
+    const hasName = Boolean(String(user?.displayName || '').trim())
+    if (isAnon && !hasName) {
+      setNamePromptOpen(true)
+    } else {
+      setNamePromptOpen(false)
+    }
+  }, [user?.displayName, user?.isAnonymous])
+
+  async function saveAnonymousName() {
+    const name = String(pendingName || '').trim()
+    if (!name) return
+    if (!auth.currentUser) return
+    setSavingName(true)
+    try {
+      await updateProfile(auth.currentUser, { displayName: name })
+      await refreshUser?.()
+      setNamePromptOpen(false)
+    } finally {
+      setSavingName(false)
+    }
+  }
+
   const getBadgeProps = (status) => {
     const s = String(status || '').toLowerCase()
     if (s === 'confirmed' || s === 'approved') return { tone: 'success', text: 'Thành công' }
@@ -65,7 +95,62 @@ export default function OverviewPage() {
 
   return (
     <div className="stack" style={{ padding: '20px' }}>
-      
+      {namePromptOpen ? (
+        <div
+          className="modalOverlay"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setNamePromptOpen(false)
+          }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.4)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            zIndex: 50,
+          }}
+        >
+          <div
+            className="card"
+            style={{ width: 'min(480px, 100%)', padding: 16 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="pageTitle" style={{ marginBottom: 6 }}>
+              How can I call you?
+            </div>
+
+            <label className="field">
+              <div className="field__label">Display name</div>
+              <input
+                className="input"
+                value={pendingName}
+                onChange={(e) => setPendingName(e.target.value)}
+                placeholder=""
+                autoFocus
+              />
+            </label>
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 14 }}>
+              <button type="button" className="btn" onClick={() => setNamePromptOpen(false)} disabled={savingName}>
+                Later
+              </button>
+              <button
+                type="button"
+                className="brandButton"
+                onClick={saveAnonymousName}
+                disabled={savingName || !String(pendingName || '').trim()}
+              >
+                {savingName ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {/* BANNER CHÀO MỪNG - TIỆN ÍCH CHO KHÁCH */}
       <div className={styles.welcomeBanner}>
         <div className={styles.bannerContent}>

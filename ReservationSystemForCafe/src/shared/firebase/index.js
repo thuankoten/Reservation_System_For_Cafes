@@ -20,6 +20,11 @@ const firebaseConfig = {
 if (import.meta.env.DEV) {
   const key = firebaseConfig.apiKey
   const keyPreview = typeof key === 'string' ? `${key.slice(0, 6)}...${key.slice(-4)}` : String(key)
+  console.info('[firebase] env check', {
+    apiKey: keyPreview,
+    authDomain: firebaseConfig.authDomain,
+    projectId: firebaseConfig.projectId,
+  })
 }
 
 const required = ['apiKey', 'authDomain', 'projectId', 'appId']

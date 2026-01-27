@@ -1,4 +1,4 @@
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: "AIzaSyAwfJrv60mDecdKSCjPz_gtBUbLEi9QRVQ", 
   authDomain: "reservation-system-cafe.firebaseapp.com",
   projectId: "reservation-system-cafe",

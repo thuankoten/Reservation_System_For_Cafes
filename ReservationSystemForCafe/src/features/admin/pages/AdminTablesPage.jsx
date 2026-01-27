@@ -16,6 +16,7 @@ import { db } from '../../../shared/firebase'
 import { formatISODate } from '../../../shared/utils/timeline'
 import TableMap from '../../../shared/components/tables/TableMap'
 import TableTimeline from '../../../shared/components/tables/TableTimeline'
+import ReservationPanel from '../../../shared/components/reservations/ReservationPanel'
 
 const STATUS_OPTIONS = [
   { value: 'available', label: 'Free (available)' },
@@ -545,13 +546,15 @@ export default function AdminTablesPage() {
 
               {selectedRow ? (
                 <aside className="tablesAside tablesAside--open" aria-label="Table details" style={{ maxHeight: '100vh', overflowY: 'auto' }}>
-                  <section className="reservationPanel" aria-label="Selected table">
-                    <header className="reservationPanel__header">
-                      <div>
-                        <div className="reservationPanel__title">Table</div>
-                        <div className="reservationPanel__subtitle">Right-click for Edit/Delete</div>
-                      </div>
-                      <div className="reservationPanel__actions">
+                  <ReservationPanel
+                    title="Table"
+                    subtitle="Right-click for Edit/Delete"
+                    table={selectedRow}
+                    floorLabel={selectedRow.floor ?? '—'}
+                    statusLabel={normalizedStatus(selectedRow.status)}
+                    placementLabel={null}
+                    headerActions={
+                      <>
                         <button type="button" className="detailsCollapseBtn" onClick={() => setSelectedTableId('')}>
                           →
                         </button>
@@ -560,75 +563,57 @@ export default function AdminTablesPage() {
                             Check out
                           </button>
                         ) : null}
-                      </div>
-                    </header>
-                    <div className="reservationPanel__body">
-                      <div className="kv">
-                        <div className="kv__row">
-                          <div className="kv__k">Number</div>
-                          <div className="kv__v">{selectedRow.number ?? '—'}</div>
-                        </div>
-                        <div className="kv__row">
-                          <div className="kv__k">Seats</div>
-                          <div className="kv__v">{selectedRow.seats ?? '—'}</div>
-                        </div>
-                        <div className="kv__row">
-                          <div className="kv__k">Floor</div>
-                          <div className="kv__v">{selectedRow.floor ?? '—'}</div>
-                        </div>
-                        <div className="kv__row">
-                          <div className="kv__k">Status</div>
-                          <div className="kv__v">{normalizedStatus(selectedRow.status)}</div>
-                        </div>
+                      </>
+                    }
+                    extraCard={
+                      <>
                         {checkedInReservation ? (
-                          <>
-                            <div className="kv__row">
-                              <div className="kv__k">Currently dining</div>
-                              <div className="kv__v">{checkedInReservation.customerName || checkedInReservation.userEmail || '—'}</div>
+                          <div className="rowCard" style={{ marginTop: 12 }}>
+                            <div className="rowCard__title">Currently dining</div>
+                            <div className="muted" style={{ marginTop: 4 }}>
+                              {checkedInReservation.customerName || checkedInReservation.userEmail || '—'}
                             </div>
-                            <div className="kv__row">
-                              <div className="kv__k">Time</div>
-                              <div className="kv__v">{formatTime(checkedInReservation._start)} → {formatTime(checkedInReservation._end)}</div>
+                            <div className="muted" style={{ marginTop: 6 }}>
+                              {formatTime(checkedInReservation._start)} → {formatTime(checkedInReservation._end)}
                             </div>
-                          </>
-                        ) : (
-                          <div className="kv__row"><div className="kv__k">Currently dining</div><div className="kv__v">—</div></div>
-                        )}
-                      </div>
+                          </div>
+                        ) : null}
 
-                      <div className="rowCard" style={{ marginTop: 12 }}>
-                        <div className="rowCard__title">Reservations today</div>
-                        <div className="muted" style={{ marginTop: 4 }}>Select a reservation to check in.</div>
-                        <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
-                          {reservationsForSelectedTableToday.length === 0 ? (
-                            <div className="muted">No reservations for today.</div>
-                          ) : reservationsForSelectedTableToday.map((r) => {
-                            const now = new Date()
-                            const canCheckIn =
-                              r._status === 'confirmed' &&
-                              !r.checkedInAt &&
-                              String(selectedRow.status || '') !== 'occupied' &&
-                              r._start && now >= r._start && (!r._end || now <= r._end)
-                            return (
-                              <div key={r.id} className="rowCard" style={{ padding: 8 }}>
-                                <div style={{ minWidth: 0 }}>
-                                  <div className="rowCard__title">{r.customerName || r.userEmail || '—'}</div>
-                                  <div className="muted">{formatTime(r._start)} → {formatTime(r._end)}</div>
+                        <div className="rowCard" style={{ marginTop: 12 }}>
+                          <div className="rowCard__title">Reservations today</div>
+                          <div className="muted" style={{ marginTop: 4 }}>Select a reservation to check in.</div>
+                          <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
+                            {reservationsForSelectedTableToday.length === 0 ? (
+                              <div className="muted">No reservations for today.</div>
+                            ) : reservationsForSelectedTableToday.map((r) => {
+                              const now = new Date()
+                              const canCheckIn =
+                                r._status === 'confirmed' &&
+                                !r.checkedInAt &&
+                                String(selectedRow.status || '') !== 'occupied' &&
+                                r._start && now >= r._start && (!r._end || now <= r._end)
+                              return (
+                                <div key={r.id} className="rowCard" style={{ padding: 8 }}>
+                                  <div style={{ minWidth: 0 }}>
+                                    <div className="rowCard__title">{r.customerName || r.userEmail || '—'}</div>
+                                    <div className="muted">{formatTime(r._start)} → {formatTime(r._end)}</div>
+                                  </div>
+                                  <div>
+                                    {canCheckIn ? (
+                                      <button className="btn" onClick={() => checkInReservation(r.id)}>Check in</button>
+                                    ) : (
+                                      <span className="badge badge--neutral">{r.checkedInAt ? 'Checked in' : '—'}</span>
+                                    )}
+                                  </div>
                                 </div>
-                                <div>
-                                  {canCheckIn ? (
-                                    <button className="btn" onClick={() => checkInReservation(r.id)}>Check in</button>
-                                  ) : (
-                                    <span className="badge badge--neutral">{r.checkedInAt ? 'Checked in' : '—'}</span>
-                                  )}
-                                </div>
-                              </div>
-                            )
-                          })}
+                              )
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  </section>
+                      </>
+                    }
+                    showImage={false}
+                  />
                 </aside>
               ) : null}
             </div>
