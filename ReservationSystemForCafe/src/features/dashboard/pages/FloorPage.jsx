@@ -6,6 +6,7 @@ import { useAuth } from '../../auth/useAuth'
 import { formatISODate } from '../../../shared/utils/timeline'
 import TableMap from '../../../shared/components/tables/TableMap'
 import TableTimeline from '../../../shared/components/tables/TableTimeline'
+import { showErrorAlert } from '../../../shared/utils/errorAlert'
 
 export default function FloorPage() {
   useAuth()
@@ -35,7 +36,11 @@ export default function FloorPage() {
         setError('')
         setTables(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
       },
-      (e) => setError(e?.message || 'Failed to load tables')
+      (e) => {
+        const msg = e?.message || 'Failed to load tables'
+        setError(msg)
+        showErrorAlert(msg)
+      }
     )
 
     return () => unsub()
@@ -50,7 +55,11 @@ export default function FloorPage() {
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
         setReservations(rows)
       },
-      (e) => setReservationsError(e?.message || 'Failed to load reservations')
+      (e) => {
+        const msg = e?.message || 'Failed to load reservations'
+        setReservationsError(msg)
+        showErrorAlert(msg)
+      }
     )
 
     return () => unsub()
@@ -238,8 +247,7 @@ export default function FloorPage() {
         </div>
       </div>
 
-      {error ? <div className="error" style={{ marginTop: 12 }}>{error}</div> : null}
-      {reservationsError ? <div className="error" style={{ marginTop: 12 }}>{reservationsError}</div> : null}
+      {/* Errors are shown via alert globally; no inline error boxes */}
 
       {(activeView === 'map' || activeView === 'timeline') ? (
         <div className="floorSelectorRow" role="navigation" aria-label="Floor selector">
@@ -318,6 +326,7 @@ export default function FloorPage() {
                 ref={asideRef}
                 className={`tablesAside ${detailsOpen ? 'tablesAside--open' : 'tablesAside--closed'}`}
                 aria-label="Table details"
+                style={{ maxHeight: '80vh', overflowY: 'auto' }}
               >
                 <section className="reservationPanel" aria-label="Reservation Details">
                   <header className="reservationPanel__header">
@@ -338,7 +347,7 @@ export default function FloorPage() {
                       <button
                         type="button"
                         className="brandButton"
-                        disabled={!detailsOpen || !panelTableId || !selectedTable || (selectedReservation || normalizedStatus(selectedTable.status) !== 'free')}
+                        disabled={!detailsOpen || !panelTableId || !selectedTable || normalizedStatus(selectedTable.status) === 'occupied'}
                         onClick={() =>
                           panelTableId && navigate(`/dashboard/reservations?tableId=${encodeURIComponent(panelTableId)}`)
                         }
@@ -376,6 +385,29 @@ export default function FloorPage() {
                           <div className="kv__v">{placementLabel(selectedTable.placement)}</div>
                         </div>
                       </div>
+
+                      {/* Busy times today (confirmed only) to help users pick another hour */}
+                      {(() => {
+                        const todayIso = formatISODate(new Date())
+                        const busy = activeReservations
+                          .filter((r) => r.tableId === panelTableId)
+                          .filter((r) => r.startTimeDate && formatISODate(r.startTimeDate) === todayIso)
+                          .slice()
+                          .sort((a, b) => (a.startTimeDate?.getTime?.() || 0) - (b.startTimeDate?.getTime?.() || 0))
+                        return busy.length > 0 ? (
+                          <div className="rowCard" style={{ marginTop: 12 }}>
+                            <div className="rowCard__title">Busy times today</div>
+                            <div className="muted" style={{ marginTop: 4 }}>You can still book other free hours.</div>
+                            <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                              {busy.map((r) => (
+                                <span key={r.id} className="badge badge--neutral">
+                                  {formatTime(r.startTimeDate)} – {formatTime(r.endTimeDate)}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null
+                      })()}
 
                       {selectedTable.imageUrl ? (
                         selectedTableImageError ? (

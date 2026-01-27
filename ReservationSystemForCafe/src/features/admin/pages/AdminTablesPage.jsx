@@ -128,6 +128,15 @@ export default function AdminTablesPage() {
     }
   }
 
+  const formatTime = (d) => {
+    if (!d) return '—'
+    try {
+      return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(d)
+    } catch {
+      return d?.toLocaleString?.() || String(d)
+    }
+  }
+
   const activeReservations = useMemo(() => {
     const now = new Date()
     return reservations
@@ -145,14 +154,26 @@ export default function AdminTablesPage() {
       })
   }, [reservations])
 
+  const activeConfirmedReservations = useMemo(() => {
+    return activeReservations.filter((r) => r._status === 'confirmed')
+  }, [activeReservations])
+
   const reservationByTableId = useMemo(() => {
     const map = new Map()
-    for (const r of activeReservations) {
+    const now = new Date()
+    for (const r of activeConfirmedReservations) {
       if (!r.tableId) continue
-      if (!map.has(r.tableId)) map.set(r.tableId, r)
+      const s = r.startTimeDate
+      const e = r.endTimeDate
+      if (!(s instanceof Date) || !(e instanceof Date)) continue
+      if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) continue
+      // Consider table reserved on the map only during the actual reservation time window
+      if (s <= now && e > now) {
+        if (!map.has(r.tableId)) map.set(r.tableId, r)
+      }
     }
     return map
-  }, [activeReservations])
+  }, [activeConfirmedReservations])
 
   const floorIdForTable = (t) => {
     const explicit = Number(t?.floor)
@@ -212,6 +233,105 @@ export default function AdminTablesPage() {
     if (!selectedTableId) return null
     return rows.find((r) => r.id === selectedTableId) || null
   }, [rows, selectedTableId])
+
+  const todayIso = useMemo(() => formatISODate(new Date()), [])
+
+  const reservationsForSelectedTableToday = useMemo(() => {
+    if (!selectedRow) return []
+    const list = reservations
+      .filter((r) => r.tableId === selectedRow.id)
+      .map((r) => ({
+        ...r,
+        _status: String(r.status || '').toLowerCase(),
+        _start: toDate(r.startTime),
+        _end: toDate(r.endTime),
+      }))
+      .filter((r) => r._status === 'confirmed' && r._start && formatISODate(r._start) === todayIso)
+      .slice()
+      .sort((a, b) => (a._start?.getTime?.() || 0) - (b._start?.getTime?.() || 0))
+    return list
+  }, [reservations, selectedRow, todayIso])
+
+  const checkedInReservation = useMemo(() => {
+    return reservationsForSelectedTableToday.find((r) => r.checkedInAt && !r.checkedOutAt) || null
+  }, [reservationsForSelectedTableToday])
+
+  async function checkInReservation(reservationId) {
+    if (!selectedRow || !reservationId) return
+    try {
+      const r = reservationsForSelectedTableToday.find((x) => x.id === reservationId)
+      if (!r) throw new Error('Reservation not found')
+      const now = new Date()
+      if (!r._start || now < r._start) {
+        throw new Error('Chỉ cho phép check-in từ thời gian bắt đầu')
+      }
+      if (r._end && now > r._end) {
+        throw new Error('Đơn đã quá giờ kết thúc')
+      }
+
+      await updateDoc(doc(db, 'reservations', reservationId), {
+        checkedInAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+      await updateDoc(doc(db, 'tables', selectedRow.id), {
+        status: 'occupied',
+        updatedAt: serverTimestamp(),
+      })
+    } catch (e) {
+      setError(e?.message || 'Failed to check in')
+    }
+  }
+
+  async function checkOutCurrent() {
+    if (!selectedRow) return
+    try {
+      if (checkedInReservation) {
+        await updateDoc(doc(db, 'reservations', checkedInReservation.id), {
+          checkedOutAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
+      }
+      // If there are other upcoming confirmed reservations today, keep table reserved
+      const now = new Date()
+      const hasUpcomingConfirmed = reservationsForSelectedTableToday.some(
+        (r) => r._status === 'confirmed' && (!r.checkedInAt || r.checkedOutAt) && r._start && r._start > now
+      )
+      await updateDoc(doc(db, 'tables', selectedRow.id), {
+        status: hasUpcomingConfirmed ? 'reserved' : 'available',
+        updatedAt: serverTimestamp(),
+      })
+    } catch (e) {
+      setError(e?.message || 'Failed to check out')
+    }
+  }
+
+  async function expireOverdueConfirmed() {
+    // Expire confirmed reservations that are 30 minutes past startTime and not checked in
+    try {
+      const now = new Date()
+      const cutoff = now.getTime() - 30 * 60 * 1000
+      const toExpire = reservations.filter((r) => {
+        const s = String(r.status || '').toLowerCase()
+        if (s !== 'confirmed') return false
+        if (r.checkedInAt) return false
+        const start = toDate(r.startTime)
+        if (!(start instanceof Date)) return false
+        return start.getTime() < cutoff
+      })
+      if (toExpire.length === 0) return
+      const batch = writeBatch(db)
+      for (const r of toExpire) {
+        batch.update(doc(db, 'reservations', r.id), {
+          status: 'expired',
+          expiredAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
+      }
+      await batch.commit()
+    } catch (e) {
+      setError(e?.message || 'Failed to expire overdue reservations')
+    }
+  }
 
   async function assignFloors() {
     const ok = window.confirm('Auto-assign floor (1/2/3) for all tables based on table number order?')
@@ -347,6 +467,9 @@ export default function AdminTablesPage() {
           <div className="tablesTop__meta">
             <div style={{ fontWeight: 800 }}>Total: {rows.length}</div>
             {loading ? <div className="muted">Loading…</div> : null}
+            <button className="btn" style={{ marginLeft: 10 }} onClick={expireOverdueConfirmed}>
+              Expire overdue (30m)
+            </button>
           </div>
         </div>
 
@@ -421,7 +544,7 @@ export default function AdminTablesPage() {
               />
 
               {selectedRow ? (
-                <aside className="tablesAside tablesAside--open" aria-label="Table details">
+                <aside className="tablesAside tablesAside--open" aria-label="Table details" style={{ maxHeight: '100vh', overflowY: 'auto' }}>
                   <section className="reservationPanel" aria-label="Selected table">
                     <header className="reservationPanel__header">
                       <div>
@@ -432,9 +555,13 @@ export default function AdminTablesPage() {
                         <button type="button" className="detailsCollapseBtn" onClick={() => setSelectedTableId('')}>
                           →
                         </button>
+                        {String(selectedRow.status || '') === 'occupied' ? (
+                          <button type="button" className="btn" onClick={checkOutCurrent}>
+                            Check out
+                          </button>
+                        ) : null}
                       </div>
                     </header>
-
                     <div className="reservationPanel__body">
                       <div className="kv">
                         <div className="kv__row">
@@ -451,7 +578,53 @@ export default function AdminTablesPage() {
                         </div>
                         <div className="kv__row">
                           <div className="kv__k">Status</div>
-                          <div className="kv__v">{String(selectedRow.status || 'available')}</div>
+                          <div className="kv__v">{normalizedStatus(selectedRow.status)}</div>
+                        </div>
+                        {checkedInReservation ? (
+                          <>
+                            <div className="kv__row">
+                              <div className="kv__k">Currently dining</div>
+                              <div className="kv__v">{checkedInReservation.customerName || checkedInReservation.userEmail || '—'}</div>
+                            </div>
+                            <div className="kv__row">
+                              <div className="kv__k">Time</div>
+                              <div className="kv__v">{formatTime(checkedInReservation._start)} → {formatTime(checkedInReservation._end)}</div>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="kv__row"><div className="kv__k">Currently dining</div><div className="kv__v">—</div></div>
+                        )}
+                      </div>
+
+                      <div className="rowCard" style={{ marginTop: 12 }}>
+                        <div className="rowCard__title">Reservations today</div>
+                        <div className="muted" style={{ marginTop: 4 }}>Select a reservation to check in.</div>
+                        <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
+                          {reservationsForSelectedTableToday.length === 0 ? (
+                            <div className="muted">No reservations for today.</div>
+                          ) : reservationsForSelectedTableToday.map((r) => {
+                            const now = new Date()
+                            const canCheckIn =
+                              r._status === 'confirmed' &&
+                              !r.checkedInAt &&
+                              String(selectedRow.status || '') !== 'occupied' &&
+                              r._start && now >= r._start && (!r._end || now <= r._end)
+                            return (
+                              <div key={r.id} className="rowCard" style={{ padding: 8 }}>
+                                <div style={{ minWidth: 0 }}>
+                                  <div className="rowCard__title">{r.customerName || r.userEmail || '—'}</div>
+                                  <div className="muted">{formatTime(r._start)} → {formatTime(r._end)}</div>
+                                </div>
+                                <div>
+                                  {canCheckIn ? (
+                                    <button className="btn" onClick={() => checkInReservation(r.id)}>Check in</button>
+                                  ) : (
+                                    <span className="badge badge--neutral">{r.checkedInAt ? 'Checked in' : '—'}</span>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
                         </div>
                       </div>
                     </div>

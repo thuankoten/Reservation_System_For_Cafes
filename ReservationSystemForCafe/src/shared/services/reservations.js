@@ -79,9 +79,13 @@ export async function createHoldReservation({
       const snap = await tx.get(slotRef)
       if (snap.exists()) {
         const data = snap.data() || {}
+        const now = new Date()
         const existingExpiresAt = typeof data?.expiresAt?.toDate === 'function' ? data.expiresAt.toDate() : data.expiresAt
-        const isExpired = existingExpiresAt instanceof Date ? existingExpiresAt <= new Date() : false
-        if (!isExpired) throw new Error('This table is not available for the selected time')
+        const slotEnd = typeof data?.endTime?.toDate === 'function' ? data.endTime.toDate() : data.endTime
+        const expiredByHold = existingExpiresAt instanceof Date ? existingExpiresAt <= now : false
+        const expiredByEnd = slotEnd instanceof Date ? slotEnd <= now : false
+        const isStale = expiredByHold || expiredByEnd
+        if (!isStale) throw new Error('This table is not available for the selected time')
       }
     }
 

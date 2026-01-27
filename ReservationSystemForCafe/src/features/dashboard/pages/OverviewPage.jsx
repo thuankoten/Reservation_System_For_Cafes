@@ -50,9 +50,10 @@ export default function OverviewPage() {
       orderBy('createdAt', 'desc'),
       limit(5)
     )
-    return onSnapshot(q, (snap) => {
-      setHistory(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    const unsub = onSnapshot(q, (snap) => {
+      setHistory(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
     })
+    return () => unsub()
   }, [user?.uid])
 
   const getBadgeProps = (status) => {
@@ -132,6 +133,7 @@ export default function OverviewPage() {
           </p>
         </div>
         
+        
         <div className={styles.historyTableContainer}>
           <table className={styles.historyTable}>
             <thead>
@@ -157,6 +159,7 @@ export default function OverviewPage() {
               ))}
             </tbody>
           </table>
+          
           
           {history.length === 0 && (
             <div style={{ textAlign: 'center', padding: '40px 20px' }}>

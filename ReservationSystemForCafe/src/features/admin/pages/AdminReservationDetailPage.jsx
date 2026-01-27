@@ -28,47 +28,64 @@ export default function AdminReservationDetailPage() {
   if (!r) return <div>Reservation not found</div>
 
   return (
-    <div className="reservationDetailPage">
-      {/* Back */}
-      <button
-        className="backLink"
-        onClick={() => navigate(-1)}
-      >
-        ← Back
+  <div
+    className="reservationDetailOverlay"
+    onClick={() => navigate(-1)}
+  >
+    <div
+      className="reservationDetailCard"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button className="backLink" onClick={() => navigate(-1)}>
+        ✕ Close
       </button>
 
-      {/* Card */}
-      <div className="reservationDetailCard">
-        <div className="detailHeader">
-            <h2>Reservation Detail</h2>
-            <StatusBadge status={r.status} />
-        </div>
+      <div className="detailHeader">
+        <h2>Reservation Detail</h2>
+        <StatusBadge status={r.status} />
+      </div>
 
-        <div className="detailRow">
-          <span>Table</span>
-          <span>{r.tableNumber}</span>
-        </div>
+      <div className="detailRow">
+        <span>Customer</span>
+        <span>{r.customerName || 'Guest'}</span>
+      </div>
 
-        <div className="detailRow">
-          <span>Seats</span>
-          <span>{r.tableSeats}</span>
-        </div>
+      <div className="detailRow">
+        <span>Phone</span>
+        <span>{r.customerPhone || '—'}</span>
+      </div>
 
-        <div className="detailRow">
-          <span>Party Size</span>
-          <span>{r.partySize}</span>
-        </div>
+      <div className="detailRow">
+        <span>Email</span>
+        <span>{r.customerEmail || r.userEmail || '—'}</span>
+      </div>
 
-        <div className="detailRow">
-          <span>Duration</span>
-          <span>{r.durationMinutes} mins</span>
-        </div>
+      <div className="detailRow">
+        <span>Table</span>
+        <span>{r.tableNumber}</span>
+      </div>
 
-        <div className="detailRow">
-          <span>User</span>
-          <span>{r.userEmail || 'Guest'}</span>
-        </div>
+      <div className="detailRow">
+        <span>Party size</span>
+        <span>{r.partySize}</span>
+      </div>
+
+      <div className="detailRow">
+        <span>Time</span>
+        <span>
+          {new Date(r.startTime?.toDate?.() || r.startTime).toLocaleString()}
+          {' → '}
+          {new Date(r.endTime?.toDate?.() || r.endTime).toLocaleString()}
+        </span>
+      </div>
+
+      <div className="detailRow">
+        <span>Created at</span>
+        <span>
+          {new Date(r.createdAt?.toDate?.() || r.createdAt).toLocaleString()}
+        </span>
       </div>
     </div>
-  )
+  </div>
+)
 }

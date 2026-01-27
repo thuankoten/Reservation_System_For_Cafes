@@ -21,7 +21,6 @@ import AdminAccountsPage from '../features/admin/pages/AdminAccountsPage.jsx'
 import RequireAuth from '../features/auth/RequireAuth.jsx'
 import AdminReservationPage from '../features/admin/pages/AdminReservationPage.jsx'
 import AdminReservationDetailPage from '../features/admin/pages/AdminReservationDetailPage.jsx'
-import Home from '../pages/Home.jsx'
 import AdminDashboard from '../pages/AdminDashboard.jsx'
 
 export default function App() {
@@ -31,7 +30,7 @@ export default function App() {
       
       <Routes>
         <Route element={<AppLayout />}>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<Navigate to="/dashboard/overview" replace />} />
           <Route path="/auth" element={<AuthPage />}>
             <Route path="login" element={<Login />} />
             <Route path="admin-login" element={<AdminLogin />} />

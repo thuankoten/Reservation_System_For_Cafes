@@ -9,7 +9,7 @@ import {
 } from 'firebase/firestore'
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import { signInAnonymously, signOut } from 'firebase/auth'
-import toast from 'react-hot-toast'
+import { showErrorAlert } from '../../../shared/utils/errorAlert'
 import { auth, db } from '../../../shared/firebase'
 import { useAuth } from '../../auth/useAuth'
 import { cancelReservation, createHoldReservation } from '../../../shared/services/reservations'
@@ -74,6 +74,7 @@ export default function ReservationPage() {
   const DRAFT_KEY = 'reservationDraft'
   const [searchParams] = useSearchParams()
   const [initialTableId] = useState(() => searchParams.get('tableId') || '')
+  const [autoSelectTable, setAutoSelectTable] = useState(false)
   const [tables, setTables] = useState([])
   const [reservations, setReservations] = useState([])
   const [myReservations, setMyReservations] = useState([])
@@ -142,17 +143,17 @@ export default function ReservationPage() {
         setTables(rows)
 
         setSelectedTableId((prev) => {
+          // Keep placeholder by default; honor existing valid selection or initialTableId
           if (prev && rows.some((t) => t.id === prev)) return prev
           if (initialTableId && rows.some((t) => t.id === initialTableId)) return initialTableId
-          const firstSelectable = rows.find((t) => String(t.status || 'available').toLowerCase() !== 'occupied')
-          return firstSelectable ? firstSelectable.id : ''
+          return ''
         })
       },
       (e) => setError(e?.message || 'Failed to load tables')
     )
 
     return () => unsub()
-  }, [initialTableId])
+  }, [initialTableId, autoSelectTable])
 
   useEffect(() => {
     const q = query(collection(db, 'reservations'), orderBy('createdAt', 'desc'), limit(100))
@@ -266,7 +267,8 @@ export default function ReservationPage() {
     if (!selectedTable?.id) return st
     if (st === 'occupied') return 'occupied'
     if (reservedTableIdsForSelectedRange.has(selectedTable.id)) return 'reserved'
-    return st
+    // Ignore table's day-wide 'reserved' flag; availability is time-based here
+    return 'available'
   }, [reservedTableIdsForSelectedRange, selectedTable?.id, selectedTable?.status])
 
   const isSelectedTableUnavailable = selectedEffectiveStatus === 'reserved' || selectedEffectiveStatus === 'occupied'
@@ -370,7 +372,7 @@ export default function ReservationPage() {
     // Chặn chắc chắn nếu bàn không khả dụng
     if (isSelectedTableUnavailable) {
       setError('This table is not available for the selected time')
-      try { toast.error('Selected table is unavailable') } catch {}
+      showErrorAlert('Selected table is unavailable')
       return
     }
 
@@ -394,7 +396,7 @@ export default function ReservationPage() {
         }
         sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
       } catch {}
-      try { toast.error('Vui lòng đăng nhập để đặt bàn') } catch {}
+      showErrorAlert('Vui lòng đăng nhập để đặt bàn')
       navigate('/auth/login', { replace: false, state: { from: location } })
       return
     }
@@ -419,7 +421,7 @@ export default function ReservationPage() {
     const now = new Date()
     if (formatISODate(selectedStartDate) === formatISODate(now) && selectedStartDate <= now) {
       setError('Start time must be in the future')
-      try { toast.error('Start time must be in the future') } catch {}
+      showErrorAlert('Start time must be in the future')
       return
     }
 
@@ -463,7 +465,11 @@ export default function ReservationPage() {
         customerEmail: customerEmailValue,
       })
       if (reservationId) {
-        toast.success('Reservation request submitted. Await admin approval.')
+        // Success can keep using toast or alert; use alert per request
+        showErrorAlert('Reservation request submitted. Await admin approval.')
+        // Reset selection to placeholder to avoid immediate unavailable error for the same slot
+        setAutoSelectTable(false)
+        setSelectedTableId('')
       }
     } catch (e) {
       setError(e?.message || 'Failed to create reservation')
@@ -528,9 +534,9 @@ export default function ReservationPage() {
               </option>
               {allTableOptions.map((t) => {
                 const st = String(t.status || 'available').toLowerCase()
-                const effectiveStatus = st === 'occupied' ? 'occupied' : reservedTableIdsForSelectedRange.has(t.id) ? 'reserved' : st
-                const label = effectiveStatus === 'occupied' ? 'Occupied' : effectiveStatus === 'reserved' ? 'Reserved' : effectiveStatus === 'available' ? 'Free' : effectiveStatus
-                const disabled = effectiveStatus === 'occupied' || effectiveStatus === 'reserved'
+                const effectiveStatus = st === 'occupied' ? 'occupied' : reservedTableIdsForSelectedRange.has(t.id) ? 'reserved' : 'available'
+                const label = effectiveStatus === 'occupied' ? 'Occupied' : effectiveStatus === 'reserved' ? 'Reserved' : 'Free'
+                const disabled = effectiveStatus === 'occupied'
                 return (
                   <option key={t.id} value={t.id} disabled={disabled}>
                     Table {t.number} (seats: {t.seats || '?'}) • {label}
@@ -627,7 +633,7 @@ export default function ReservationPage() {
 
         {/* Pending approval countdown removed */}
 
-        {error ? <div className="error" style={{ marginTop: 12 }}>{error}</div> : null}
+        {/* Errors are shown via alert globally; no inline error box */}
       </div>
 
       <div className="card">
