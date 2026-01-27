@@ -1,5 +1,80 @@
+
+.welcomeBanner {
+  background: linear-gradient(135deg, #6e4e37 0%, #3d2b1f 100%);
+  color: white;
+  padding: 45px;
+  border-radius: 20px;
+  margin-bottom: 30px;
+  position: relative; 
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(110, 78, 55, 0.15);
+}
+
+
+.welcomeBanner::after {
+  content: "☕";
+  position: absolute;
+  right: 10px;
+  bottom: -20px;
+  font-size: 10rem;
+  opacity: 0.1;
+  transform: rotate(-15deg);
+}
+
+.welcomeBanner h2 {
+  font-size: 2.2rem;
+  margin-bottom: 12px;
+  color: white;
+  position: relative;
+  z-index: 1;
+}
+
+.welcomeBanner p {
+  position: relative;
+  z-index: 1;
+  opacity: 0.9;
+}
+
+.buttonGroup {
+  display: flex;
+  gap: 15px;
+  margin-top: 25px;
+  position: relative;
+  z-index: 2;
+}
+
+.btnPrimary {
+  background-color: #ffffff;
+  color: #6e4e37;
+  padding: 14px 32px;
+  font-weight: 800;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.btnPrimary:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+  background-color: #fcfaf8;
+}
+
+
 .historyCard {
   margin-top: 20px;
+  background: white;
+  padding: 25px;
+  border-radius: 15px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.04);
+}
+
+.cardHeader {
+  margin-bottom: 20px;
+  border-left: 4px solid #6e4e37;
+  padding-left: 15px;
 }
 
 .historyTableContainer {
@@ -14,38 +89,38 @@
 }
 
 .historyTable thead tr {
-  border-bottom: 1px solid #eee;
+  border-bottom: 2px solid #f4f4f4;
   color: #888;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
 }
 
 .historyTable th {
-  padding: 10px 5px;
+  padding: 12px 10px;
   text-transform: uppercase;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 1px;
 }
 
 .historyTable tbody tr {
   border-bottom: 1px solid #f9f9f9;
-  font-size: 0.9rem;
-  transition: background-color 0.2s;
+  font-size: 0.95rem;
+  transition: all 0.2s;
 }
 
 .historyTable tbody tr:hover {
-  background-color: #fcfaf8; /* Hiệu ứng hover nhẹ màu nâu cafe */
+  background-color: #fcfaf8;
+  transform: scale(1.002);
 }
 
 .historyTable td {
-  padding: 12px 5px;
+  padding: 15px 10px;
   vertical-align: middle;
 }
 
-.statusAlign {
-  text-align: right;
-}
-
+/* Dành cho Responsive điện thoại */
 @media (max-width: 600px) {
-  .historyTable {
-    font-size: 0.8rem;
-  }
+  .welcomeBanner { padding: 30px 20px; }
+  .welcomeBanner h2 { font-size: 1.5rem; }
+  .historyTable { font-size: 0.85rem; }
+  .btnPrimary { width: 100%; text-align: center; }
 }
