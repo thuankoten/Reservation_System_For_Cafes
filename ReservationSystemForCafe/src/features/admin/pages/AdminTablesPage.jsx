@@ -1,22 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  collection,
-  deleteDoc,
-  doc,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  updateDoc,
-  writeBatch,
-  limit,
-} from 'firebase/firestore'
-import { db } from '../../../shared/firebase'
-import { formatISODate } from '../../../shared/utils/timeline'
+import { collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, writeBatch, limit, getDocFromServer, setDoc } from 'firebase/firestore'
+import { checkInReservation as adminCheckIn, checkOutTable as adminCheckOut, expireOverdueConfirmed as adminExpireOverdue, reconcileTableStatuses as adminReconcile, occupyTableManual as adminOccupyManual, releaseTableManual as adminReleaseManual } from '../../../shared/services/admin/reservations'
+import { db, storage } from '../../../shared/firebase'
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { formatISODate, TIMELINE_CONFIG } from '../../../shared/utils/timeline'
 import TableMap from '../../../shared/components/tables/TableMap'
 import TableTimeline from '../../../shared/components/tables/TableTimeline'
-import ReservationPanel from '../../../shared/components/reservations/ReservationPanel'
 
 const STATUS_OPTIONS = [
   { value: 'available', label: 'Free (available)' },
@@ -43,6 +33,10 @@ export default function AdminTablesPage() {
   const [activeStatus, setActiveStatus] = useState('all')
   const [selectedTableId, setSelectedTableId] = useState('')
   const [timelineIsoDate, setTimelineIsoDate] = useState(() => formatISODate(new Date()))
+  const [nowOffsetMinutes, setNowOffsetMinutes] = useState(0)
+  const [imageViewerOpen, setImageViewerOpen] = useState(false)
+  const [imageViewerSrc, setImageViewerSrc] = useState('')
+  const [imageViewerZoom, setImageViewerZoom] = useState(1)
 
   const [savingId, setSavingId] = useState('')
   const [deletingId, setDeletingId] = useState('')
@@ -73,6 +67,53 @@ export default function AdminTablesPage() {
     return () => unsub()
   }, [])
 
+  // Auto-expire overdue confirmed reservations periodically (every 5 minutes) and on mount
+  useEffect(() => {
+    let timerId
+    async function runExpire() {
+      try {
+        await adminExpireOverdue({ db, reservations })
+      } catch (e) {
+        /* swallow errors to avoid noisy UI; manual action still available */
+      }
+    }
+    runExpire()
+    timerId = setInterval(runExpire, 5 * 60 * 1000)
+    return () => {
+      if (timerId) clearInterval(timerId)
+    }
+  }, [reservations])
+
+  // Calibrate client clock against Firestore server time once on mount
+  useEffect(() => {
+    let cancelled = false
+    async function calibrate() {
+      try {
+        const ref = doc(db, 'meta', 'timePing')
+        await setDoc(ref, { pingedAt: serverTimestamp() }, { merge: true })
+        // Force fetch from server to avoid stale cached timestamp
+        const snap = await getDocFromServer(ref)
+        const serverNow = snap.data()?.pingedAt?.toDate?.()
+        if (serverNow instanceof Date && !cancelled) {
+          const offsetMs = serverNow.getTime() - Date.now()
+          const offsetMin = Math.round(offsetMs / 60000)
+          // Ignore suspicious large offsets (>5 minutes) to avoid DST/timezone artifacts
+          const safeOffset = Number.isFinite(offsetMin) ? offsetMin : 0
+          const bounded = Math.abs(safeOffset) <= 5 ? safeOffset : 0
+          if (Math.abs(safeOffset) > 5) {
+            try { console.warn('[Time Calibrate] Large offset ignored:', safeOffset, 'min') } catch {}
+          }
+          setNowOffsetMinutes(bounded)
+        }
+      } catch (e) {
+        // If calibration fails, fall back to device time
+        setNowOffsetMinutes(0)
+      }
+    }
+    calibrate()
+    return () => { cancelled = true }
+  }, [])
+
   useEffect(() => {
     const q = query(collection(db, 'reservations'), orderBy('createdAt', 'desc'), limit(200))
     const unsub = onSnapshot(
@@ -85,6 +126,16 @@ export default function AdminTablesPage() {
     )
     return () => unsub()
   }, [])
+
+  // Reconcile table statuses on initial data load and whenever tables/reservations change
+  useEffect(() => {
+    if (!rows || rows.length === 0) return
+    // Debounce to avoid rapid consecutive writes
+    const timer = setTimeout(() => {
+      adminReconcile({ db, tables: rows, reservations }).catch(() => {})
+    }, 800)
+    return () => clearTimeout(timer)
+  }, [rows, reservations])
 
   useEffect(() => {
     if (!contextMenu.open) return
@@ -150,6 +201,8 @@ export default function AdminTablesPage() {
       })
       .filter((r) => {
         if (r._status === 'confirmed') return true
+        if (r._status === 'occupied') return true
+        if (r._status === 'completed') return true
         if (r._status === 'hold') return r._holdExpiresAt && r._holdExpiresAt > now
         return false
       })
@@ -168,7 +221,6 @@ export default function AdminTablesPage() {
       const e = r.endTimeDate
       if (!(s instanceof Date) || !(e instanceof Date)) continue
       if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) continue
-      // Consider table reserved on the map only during the actual reservation time window
       if (s <= now && e > now) {
         if (!map.has(r.tableId)) map.set(r.tableId, r)
       }
@@ -185,8 +237,7 @@ export default function AdminTablesPage() {
   const filteredTables = useMemo(() => {
     return rows.filter((t) => {
       const status = normalizedStatus(t.status)
-      const hasReservation = reservationByTableId.has(t.id)
-      const effectiveStatus = hasReservation ? 'reserved' : status
+      const effectiveStatus = status
       if (activeStatus === 'all') return true
       return effectiveStatus === activeStatus
     })
@@ -203,9 +254,8 @@ export default function AdminTablesPage() {
     return rows
       .filter((t) => floorIdForTable(t) === activeFloor)
       .filter((t) => {
-        const hasRes = reservationByTableId.has(t.id)
         const status = normalizedStatus(t.status)
-        const effective = hasRes ? 'reserved' : status
+        const effective = status
         if (activeStatus === 'all') return true
         return effective === activeStatus
       })
@@ -237,8 +287,15 @@ export default function AdminTablesPage() {
 
   const todayIso = useMemo(() => formatISODate(new Date()), [])
 
+  const isAfterClose = useMemo(() => {
+    const now = new Date(Date.now() + (Number(nowOffsetMinutes) || 0) * 60 * 1000)
+    const mins = now.getHours() * 60 + now.getMinutes()
+    return formatISODate(now) === todayIso && mins >= TIMELINE_CONFIG.closeMinutes
+  }, [nowOffsetMinutes, todayIso])
+
   const reservationsForSelectedTableToday = useMemo(() => {
     if (!selectedRow) return []
+    const now = new Date()
     const list = reservations
       .filter((r) => r.tableId === selectedRow.id)
       .map((r) => ({
@@ -247,15 +304,57 @@ export default function AdminTablesPage() {
         _start: toDate(r.startTime),
         _end: toDate(r.endTime),
       }))
-      .filter((r) => r._status === 'confirmed' && r._start && formatISODate(r._start) === todayIso)
+      .filter((r) =>
+        r._status === 'confirmed' &&
+        r._start &&
+        formatISODate(r._start) === todayIso &&
+        !r.checkedInAt &&
+        (!r.checkedOutAt) &&
+        ((r._end && r._end >= now) || (!r._end && r._start >= now))
+      )
+      .slice()
+      .sort((a, b) => (a._start?.getTime?.() || 0) - (b._start?.getTime?.() || 0))
+    return list
+  }, [reservations, selectedRow, todayIso])
+
+  const reservationsForSelectedTableOtherDays = useMemo(() => {
+    if (!selectedRow) return []
+    const now = new Date()
+    const list = reservations
+      .filter((r) => r.tableId === selectedRow.id)
+      .map((r) => ({
+        ...r,
+        _status: String(r.status || '').toLowerCase(),
+        _start: toDate(r.startTime),
+        _end: toDate(r.endTime),
+      }))
+      .filter((r) =>
+        r._status === 'confirmed' &&
+        r._start &&
+        formatISODate(r._start) !== todayIso &&
+        !r.checkedInAt &&
+        (!r.checkedOutAt) &&
+        ((r._end && r._end >= now) || (!r._end && r._start >= now))
+      )
       .slice()
       .sort((a, b) => (a._start?.getTime?.() || 0) - (b._start?.getTime?.() || 0))
     return list
   }, [reservations, selectedRow, todayIso])
 
   const checkedInReservation = useMemo(() => {
-    return reservationsForSelectedTableToday.find((r) => r.checkedInAt && !r.checkedOutAt) || null
-  }, [reservationsForSelectedTableToday])
+    if (!selectedRow) return null
+    const list = reservations
+      .filter((r) => r.tableId === selectedRow.id)
+      .map((r) => ({
+        ...r,
+        _status: String(r.status || '').toLowerCase(),
+        _start: toDate(r.startTime),
+        _end: toDate(r.endTime),
+      }))
+      .filter((r) => r._start && formatISODate(r._start) === todayIso)
+    // Ưu tiên xác định bằng checkedInAt/checkedOutAt
+    return list.find((r) => r.checkedInAt && !r.checkedOutAt) || null
+  }, [reservations, selectedRow, todayIso])
 
   async function checkInReservation(reservationId) {
     if (!selectedRow || !reservationId) return
@@ -269,15 +368,7 @@ export default function AdminTablesPage() {
       if (r._end && now > r._end) {
         throw new Error('Đơn đã quá giờ kết thúc')
       }
-
-      await updateDoc(doc(db, 'reservations', reservationId), {
-        checkedInAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      })
-      await updateDoc(doc(db, 'tables', selectedRow.id), {
-        status: 'occupied',
-        updatedAt: serverTimestamp(),
-      })
+      await adminCheckIn({ db, reservationId, tableId: selectedRow.id })
     } catch (e) {
       setError(e?.message || 'Failed to check in')
     }
@@ -286,49 +377,35 @@ export default function AdminTablesPage() {
   async function checkOutCurrent() {
     if (!selectedRow) return
     try {
-      if (checkedInReservation) {
-        await updateDoc(doc(db, 'reservations', checkedInReservation.id), {
-          checkedOutAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        })
-      }
-      // If there are other upcoming confirmed reservations today, keep table reserved
       const now = new Date()
       const hasUpcomingConfirmed = reservationsForSelectedTableToday.some(
         (r) => r._status === 'confirmed' && (!r.checkedInAt || r.checkedOutAt) && r._start && r._start > now
       )
-      await updateDoc(doc(db, 'tables', selectedRow.id), {
-        status: hasUpcomingConfirmed ? 'reserved' : 'available',
-        updatedAt: serverTimestamp(),
-      })
+      if (checkedInReservation?.id) {
+        await adminCheckOut({ db, tableId: selectedRow.id, reservationId: checkedInReservation.id, keepReserved: hasUpcomingConfirmed })
+      } else {
+        await adminReleaseManual({ db, tableId: selectedRow.id, keepReserved: hasUpcomingConfirmed })
+      }
     } catch (e) {
       setError(e?.message || 'Failed to check out')
     }
   }
+  async function manualCheckIn() {
+    if (!selectedRow) return
+    try {
+      if (isAfterClose) {
+        setError('Store closed (after 23:00)')
+        return
+      }
+      await adminOccupyManual({ db, tableId: selectedRow.id })
+    } catch (e) {
+      setError(e?.message || 'Failed to check in walk-in')
+    }
+  }
 
   async function expireOverdueConfirmed() {
-    // Expire confirmed reservations that are 30 minutes past startTime and not checked in
     try {
-      const now = new Date()
-      const cutoff = now.getTime() - 30 * 60 * 1000
-      const toExpire = reservations.filter((r) => {
-        const s = String(r.status || '').toLowerCase()
-        if (s !== 'confirmed') return false
-        if (r.checkedInAt) return false
-        const start = toDate(r.startTime)
-        if (!(start instanceof Date)) return false
-        return start.getTime() < cutoff
-      })
-      if (toExpire.length === 0) return
-      const batch = writeBatch(db)
-      for (const r of toExpire) {
-        batch.update(doc(db, 'reservations', r.id), {
-          status: 'expired',
-          expiredAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        })
-      }
-      await batch.commit()
+      await adminExpireOverdue({ db, reservations })
     } catch (e) {
       setError(e?.message || 'Failed to expire overdue reservations')
     }
@@ -360,6 +437,19 @@ export default function AdminTablesPage() {
     } catch (e) {
       setError(e?.message || 'Failed to assign floors')
     }
+  }
+
+  function openImageViewer(src) {
+    if (!src) return
+    setImageViewerSrc(src)
+    setImageViewerZoom(1)
+    setImageViewerOpen(true)
+  }
+
+  function closeImageViewer() {
+    setImageViewerOpen(false)
+    setImageViewerSrc('')
+    setImageViewerZoom(1)
   }
 
   async function saveEditDialog() {
@@ -394,13 +484,16 @@ export default function AdminTablesPage() {
 
     setSavingId(id)
     try {
-      await updateDoc(doc(db, 'tables', id), {
+      const payload = {
         number,
         seats,
         floor,
-        status: draft.status,
         updatedAt: serverTimestamp(),
-      })
+      }
+      if (draft.imageUrl && typeof draft.imageUrl === 'string' && draft.imageUrl.length > 0) {
+        payload.imageUrl = draft.imageUrl
+      }
+      await updateDoc(doc(db, 'tables', id), payload)
       setEditDialog({ open: false, tableId: '', draft: null })
     } catch (e) {
       setError(e?.message || 'Failed to update table')
@@ -430,7 +523,7 @@ export default function AdminTablesPage() {
         <div className="cardHeader">
           <div>
             <h2 className="pageTitle">Admin • Tables</h2>
-            <div className="muted">Create, update, and delete tables</div>
+            {/* <div className="muted">Create, update, and delete tables</div> */}
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <button className="btn btn--primary" type="button" onClick={() => navigate('/admin/dashboard/tables/new')}>
@@ -468,9 +561,9 @@ export default function AdminTablesPage() {
           <div className="tablesTop__meta">
             <div style={{ fontWeight: 800 }}>Total: {rows.length}</div>
             {loading ? <div className="muted">Loading…</div> : null}
-            <button className="btn" style={{ marginLeft: 10 }} onClick={expireOverdueConfirmed}>
+            {/* <button className="btn" style={{ marginLeft: 10 }} onClick={expireOverdueConfirmed}>
               Expire overdue (30m)
-            </button>
+            </button> */}
           </div>
         </div>
 
@@ -533,7 +626,6 @@ export default function AdminTablesPage() {
               <TableMap
                 tables={mapTables}
                 selectedTableId={selectedTableId}
-                reservationByTableId={reservationByTableId}
                 normalizedStatus={normalizedStatus}
                 statusSymbol={statusSymbol}
                 onBackgroundClick={() => setSelectedTableId('')}
@@ -545,16 +637,14 @@ export default function AdminTablesPage() {
               />
 
               {selectedRow ? (
-                <aside className="tablesAside tablesAside--open" aria-label="Table details" style={{ maxHeight: '100vh', overflowY: 'auto' }}>
-                  <ReservationPanel
-                    title="Table"
-                    subtitle="Right-click for Edit/Delete"
-                    table={selectedRow}
-                    floorLabel={selectedRow.floor ?? '—'}
-                    statusLabel={normalizedStatus(selectedRow.status)}
-                    placementLabel={null}
-                    headerActions={
-                      <>
+                <aside className="tablesAside tablesAside--open" aria-label="Table details" style={{ maxHeight: '90vh', overflowY: 'auto' }}>
+                  <section className="reservationPanel" aria-label="Selected table">
+                    <header className="reservationPanel__header">
+                      <div>
+                        <div className="reservationPanel__title">Table</div>
+                        {/* <div className="reservationPanel__subtitle">Right-click for Edit/Delete</div> */}
+                      </div>
+                      <div className="reservationPanel__actions">
                         <button type="button" className="detailsCollapseBtn" onClick={() => setSelectedTableId('')}>
                           →
                         </button>
@@ -562,58 +652,122 @@ export default function AdminTablesPage() {
                           <button type="button" className="btn" onClick={checkOutCurrent}>
                             Check out
                           </button>
-                        ) : null}
-                      </>
-                    }
-                    extraCard={
-                      <>
-                        {checkedInReservation ? (
-                          <div className="rowCard" style={{ marginTop: 12 }}>
-                            <div className="rowCard__title">Currently dining</div>
-                            <div className="muted" style={{ marginTop: 4 }}>
-                              {checkedInReservation.customerName || checkedInReservation.userEmail || '—'}
-                            </div>
-                            <div className="muted" style={{ marginTop: 6 }}>
-                              {formatTime(checkedInReservation._start)} → {formatTime(checkedInReservation._end)}
-                            </div>
-                          </div>
-                        ) : null}
+                        ) : (
+                          <button type="button" className="btn" onClick={manualCheckIn} disabled={isAfterClose} title={isAfterClose ? 'Store closed after 23:00' : undefined}>
+                            Check in (Walk-in)
+                          </button>
+                        )}
+                      </div>
 
-                        <div className="rowCard" style={{ marginTop: 12 }}>
-                          <div className="rowCard__title">Reservations today</div>
-                          <div className="muted" style={{ marginTop: 4 }}>Select a reservation to check in.</div>
-                          <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
-                            {reservationsForSelectedTableToday.length === 0 ? (
-                              <div className="muted">No reservations for today.</div>
-                            ) : reservationsForSelectedTableToday.map((r) => {
-                              const now = new Date()
-                              const canCheckIn =
-                                r._status === 'confirmed' &&
-                                !r.checkedInAt &&
-                                String(selectedRow.status || '') !== 'occupied' &&
-                                r._start && now >= r._start && (!r._end || now <= r._end)
-                              return (
-                                <div key={r.id} className="rowCard" style={{ padding: 8 }}>
-                                  <div style={{ minWidth: 0 }}>
-                                    <div className="rowCard__title">{r.customerName || r.userEmail || '—'}</div>
-                                    <div className="muted">{formatTime(r._start)} → {formatTime(r._end)}</div>
-                                  </div>
-                                  <div>
-                                    {canCheckIn ? (
-                                      <button className="btn" onClick={() => checkInReservation(r.id)}>Check in</button>
-                                    ) : (
-                                      <span className="badge badge--neutral">{r.checkedInAt ? 'Checked in' : '—'}</span>
-                                    )}
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
+                      <div style={{ marginTop: 12, flex: '0 0 100%', width: '100%' }}>
+                        {selectedRow?.imageUrl ? (
+                          <button
+                            type="button"
+                            className="reservationPanel__thumbBtn"
+                            onClick={() => openImageViewer(selectedRow.imageUrl)}
+                            aria-label="View table image"
+                          >
+                            <img className="reservationPanel__thumb" src={selectedRow.imageUrl} alt="Table photo" loading="lazy" referrerPolicy="no-referrer" />
+                          </button>
+                        ) : (
+                          <div className="muted">No image.</div>
+                        )}
+                      </div>
+                    </header>
+                    <div className="reservationPanel__body">
+                      <div className="kv">
+                        <div className="kv__row">
+                          <div className="kv__k">Number</div>
+                          <div className="kv__v">{selectedRow.number ?? '—'}</div>
                         </div>
-                      </>
-                    }
-                    showImage={false}
-                  />
+                        <div className="kv__row">
+                          <div className="kv__k">Seats</div>
+                          <div className="kv__v">{selectedRow.seats ?? '—'}</div>
+                        </div>
+                        <div className="kv__row">
+                          <div className="kv__k">Floor</div>
+                          <div className="kv__v">{selectedRow.floor ?? '—'}</div>
+                        </div>
+                        {/* <div className="kv__row">
+                          <div className="kv__k">Status</div>
+                          <div className="kv__v">{normalizedStatus(selectedRow.status)}</div>
+                        </div> */}
+                        {checkedInReservation ? (
+                          <>
+                            <div className="kv__row">
+                              <div className="kv__k">Currently dining</div>
+                              <div className="kv__v">{checkedInReservation.customerName || checkedInReservation.userEmail || '—'}</div>
+                            </div>
+                            <div className="kv__row">
+                              <div className="kv__k">Time</div>
+                              <div className="kv__v">{formatTime(checkedInReservation._start)} → {formatTime(checkedInReservation._end)}</div>
+                            </div>
+                          </>
+                        ) : (
+                          String(selectedRow.status || '') === 'occupied' ? (
+                            <div className="kv__row"><div className="kv__k">Currently dining</div><div className="kv__v">Walk-in</div></div>
+                          ) : (
+                            <div className="kv__row"><div className="kv__k">Currently dining</div><div className="kv__v">—</div></div>
+                          )
+                        )}
+                      </div>
+
+                      <div className="rowCard" style={{ marginTop: 12 }}>
+                        <div className="rowCard__title">Reservations today</div>
+                        <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
+                          {reservationsForSelectedTableToday.length === 0 ? (
+                            <div className="muted">No reservations for today.</div>
+                          ) : reservationsForSelectedTableToday.map((r) => {
+                            const now = new Date()
+                            const canCheckIn =
+                              r._status === 'confirmed' &&
+                              !r.checkedInAt &&
+                              String(selectedRow.status || '') !== 'occupied' &&
+                              r._start && now >= r._start && (!r._end || now <= r._end)
+                            return (
+                              <div key={r.id} className="rowCard" style={{ padding: 8 }}>
+                                <div style={{ minWidth: 0 }}>
+                                  <div className="rowCard__title">{r.customerName || r.userEmail || '—'}</div>
+                                  <div className="muted">{formatTime(r._start)} → {formatTime(r._end)}</div>
+                                </div>
+                                <div>
+                                  {canCheckIn ? (
+                                    <button className="btn" onClick={() => checkInReservation(r.id)}>Check in</button>
+                                  ) : (
+                                    <span className="badge badge--neutral">—</span>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="rowCard" style={{ marginTop: 12 }}>
+                        <div className="rowCard__title">Other days</div>
+                        <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
+                          {reservationsForSelectedTableOtherDays.length === 0 ? (
+                            <div className="muted">No reservations on other days.</div>
+                          ) : (
+                            reservationsForSelectedTableOtherDays.map((r) => (
+                              <button
+                                key={r.id}
+                                type="button"
+                                className="rowCard"
+                                style={{ padding: 8, textAlign: 'left', cursor: 'pointer' }}
+                                onClick={() => navigate(`/admin/dashboard/reservations/${r.id}`)}
+                              >
+                                <div style={{ minWidth: 0 }}>
+                                  <div className="rowCard__title">{r.customerName || r.userEmail || '—'}</div>
+                                  <div className="muted">{formatISODate(r._start)} • {formatTime(r._start)} → {formatTime(r._end)}</div>
+                                </div>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </section>
                 </aside>
               ) : null}
             </div>
@@ -627,7 +781,52 @@ export default function AdminTablesPage() {
               onChangeIsoDate={(next) => setTimelineIsoDate(next)}
               onOpenReservation={(id) => navigate(`/admin/dashboard/reservations/${id}`)}
               occupiedTableIds={occupiedTableIdsForFloor}
+              nowOffsetMinutes={nowOffsetMinutes}
             />
+          ) : null}
+
+          {imageViewerOpen && imageViewerSrc ? (
+            <div
+              className="imageModal"
+              role="dialog"
+              aria-modal="true"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) closeImageViewer()
+              }}
+            >
+              <div className="imageModal__dialog">
+                <button type="button" className="imageModal__close" aria-label="Close" onClick={closeImageViewer}>
+                  ×
+                </button>
+
+                <div className="imageModal__controls" aria-label="Image zoom controls">
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => setImageViewerZoom((z) => Math.max(0.5, Math.round((z - 0.25) * 100) / 100))}
+                  >
+                    -
+                  </button>
+                  <div className="muted" style={{ minWidth: 56, textAlign: 'center' }}>{Math.round(imageViewerZoom * 100)}%</div>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => setImageViewerZoom((z) => Math.min(3, Math.round((z + 0.25) * 100) / 100))}
+                  >
+                    +
+                  </button>
+                </div>
+
+                <div className="imageModal__imgWrap">
+                  <img
+                    className="imageModal__img"
+                    src={imageViewerSrc}
+                    alt=""
+                    style={{ transform: `scale(${imageViewerZoom})` }}
+                  />
+                </div>
+              </div>
+            </div>
           ) : null}
         </div>
       </div>
@@ -655,6 +854,7 @@ export default function AdminTablesPage() {
                   seats: r.seats ?? '',
                   floor: r.floor ?? 1,
                   status: r.status || 'available',
+                  imageUrl: r.imageUrl || '',
                 },
               })
             }}
@@ -685,7 +885,7 @@ export default function AdminTablesPage() {
             if (e.target === e.currentTarget) setEditDialog({ open: false, tableId: '', draft: null })
           }}
         >
-          <div className="imageModal__dialog" style={{ maxWidth: 640 }}>
+          <div className="imageModal__dialog imageModal__dialog--form" style={{ maxWidth: 640 }}>
             <button
               type="button"
               className="imageModal__close"
@@ -752,25 +952,45 @@ export default function AdminTablesPage() {
                 </select>
               </label>
 
-              <label className="field">
+              <div className="field">
                 <div className="field__label">Status</div>
-                <select
-                  className="input"
-                  value={editDialog.draft.status}
-                  onChange={(e) =>
-                    setEditDialog((prev) => ({
-                      ...prev,
-                      draft: { ...prev.draft, status: e.target.value },
-                    }))
-                  }
-                >
-                  {STATUS_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                <div>
+                  <span className="badge badge--neutral">{String(editDialog.draft.status || '')}</span>
+                </div>
+              </div>
+
+              <div className="field">
+                <div className="field__label">Photo</div>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {editDialog.draft.imageUrl ? (
+                    <img src={editDialog.draft.imageUrl} alt="Table image" style={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 8, border: '1px solid rgba(17,24,39,0.12)' }} />
+                  ) : (
+                    <div className="muted">No image</div>
+                  )}
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <input type="file" accept="image/*" onChange={async (e) => {
+                      const file = e.target.files?.[0]
+                      if (!file) return
+                      try {
+                        const path = `tables/${editDialog.tableId}/${Date.now()}-${file.name}`
+                        const sref = storageRef(storage, path)
+                        await uploadBytes(sref, file)
+                        const url = await getDownloadURL(sref)
+                        setEditDialog((prev) => ({ ...prev, draft: { ...prev.draft, imageUrl: url } }))
+                      } catch (err) {
+                        setError(err?.message || 'Failed to upload image')
+                      } finally {
+                        e.target.value = ''
+                      }
+                    }} />
+                    {editDialog.draft.imageUrl ? (
+                      <button type="button" className="btn" onClick={() => setEditDialog((prev) => ({ ...prev, draft: { ...prev.draft, imageUrl: '' } }))}>
+                        Remove image
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div style={{ display: 'flex', gap: 10, marginTop: 12, justifyContent: 'flex-end' }}>

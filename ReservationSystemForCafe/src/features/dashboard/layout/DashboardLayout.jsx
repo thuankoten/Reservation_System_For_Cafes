@@ -11,8 +11,6 @@ export default function DashboardLayout() {
           { to: '/dashboard/tables', label: 'Tables' },
           { to: '/dashboard/reservations', label: 'Reservations' },
           { to: '/dashboard/information', label: 'Information' },
-          { to: '/dashboard/chat', label: 'Chat' },
-          { to: '/dashboard/report', label: 'Report' },
         ]}
       />
 

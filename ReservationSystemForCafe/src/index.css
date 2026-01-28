@@ -794,7 +794,8 @@ body {
    display: flex;
    align-items: flex-start;
    justify-content: space-between;
-   gap: 12px;
+  gap: 12px;
+  flex-wrap: wrap;
  }
 
  .reservationPanel__title {
@@ -857,6 +858,17 @@ body {
    grid-template-rows: auto minmax(0, 1fr);
  }
 
+/* Form variant: white background, content-based height */
+.imageModal__dialog--form {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+  display: block;
+  height: auto;
+  max-height: 78vh;
+  padding: 18px 18px 16px;
+}
+
  .imageModal__close {
    position: absolute;
    top: 10px;
@@ -864,9 +876,9 @@ body {
    width: 40px;
    height: 40px;
    border-radius: 12px;
-   border: 1px solid rgba(255, 255, 255, 0.18);
-   background: rgba(15, 23, 42, 0.4);
-   color: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.85);
+  color: #0b1220;
    font-size: 22px;
    line-height: 1;
    cursor: pointer;
@@ -1128,10 +1140,20 @@ body {
    border-color: rgba(245, 158, 11, 0.35);
  }
 
- .ganttBar--occupied {
-   background: rgba(107, 114, 128, 0.25);
-   border-color: rgba(107, 114, 128, 0.35);
- }
+.ganttBar--occupied {
+  background: rgba(139, 92, 246, 0.22); /* purple */
+  border-color: rgba(139, 92, 246, 0.35);
+}
+
+.ganttBar--completed {
+  background: rgba(107, 114, 128, 0.22); /* gray */
+  border-color: rgba(107, 114, 128, 0.35);
+}
+
+.ganttBar--manual {
+  background: rgba(234, 88, 12, 0.22); /* orange */
+  border-color: rgba(234, 88, 12, 0.35);
+}
 
  .ganttLegend {
    display: inline-flex;
@@ -1157,7 +1179,9 @@ body {
 
  .swatch--confirmed { background: rgba(16, 185, 129, 0.22); border-color: rgba(16, 185, 129, 0.35); }
  .swatch--hold { background: rgba(245, 158, 11, 0.22); border-color: rgba(245, 158, 11, 0.35); }
- .swatch--occupied { background: rgba(107, 114, 128, 0.25); border-color: rgba(107, 114, 128, 0.35); }
+.swatch--occupied { background: rgba(139, 92, 246, 0.22); border-color: rgba(139, 92, 246, 0.35); }
+.swatch--completed { background: rgba(107, 114, 128, 0.22); border-color: rgba(107, 114, 128, 0.35); }
+.swatch--manual { background: rgba(234, 88, 12, 0.22); border-color: rgba(234, 88, 12, 0.35); }
 
  .contextMenu {
    position: fixed;

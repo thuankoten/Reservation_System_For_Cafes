@@ -1,15 +1,9 @@
-import {
-  collection,
-  onSnapshot,
-  query,
-  updateDoc,
-  doc,
-  serverTimestamp,
-} from 'firebase/firestore'
+import { collection, onSnapshot, query, doc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { useEffect, useMemo, useState } from 'react'
 import { db } from '../../../shared/firebase'
 import ReservationRow from '../components/ReservationRow'
 import ReservationFilter from '../components/ReservationFilter'
+import { approveReservation, rejectReservation, expireOverdueConfirmed as adminExpireOverdue } from '../../../shared/services/admin/reservations'
 
 function toDate(v) {
   if (!v) return null
@@ -42,6 +36,22 @@ export default function AdminReservationPage() {
       )
     })
   }, [])
+
+  // Auto-expire moved to AdminTablesPage and Cloud Function.
+  // Also run here to reflect status immediately on this page.
+  useEffect(() => {
+    let timerId
+    async function runExpire() {
+      try {
+        await adminExpireOverdue({ db, reservations: rows })
+      } catch (e) {
+        // ignore errors here to avoid noisy UI
+      }
+    }
+    runExpire()
+    timerId = setInterval(runExpire, 5 * 60 * 1000)
+    return () => timerId && clearInterval(timerId)
+  }, [rows])
 
   /** ===== SEARCH ===== */
   const searched = useMemo(() => {
@@ -78,46 +88,64 @@ export default function AdminReservationPage() {
 
   const waiting = []
   const today = []
+  const upcoming = []
   const yesterday = []
   const older = []
 
-  filtered.forEach(r => {
+  filtered.forEach((r) => {
     const start = toDate(r.startTime)
-
     if (r.status === 'hold') {
       waiting.push(r)
       return
     }
-
     if (start && isSameDay(start, now)) {
       today.push(r)
-    } else if (
-      start &&
-      isSameDay(start, yesterdayDate)
-    ) {
-      yesterday.push(r)
-    } else {
-      older.push(r)
+      return
     }
+    if (start && start > now) {
+      upcoming.push(r)
+      return
+    }
+    if (start && isSameDay(start, yesterdayDate)) {
+      yesterday.push(r)
+      return
+    }
+    older.push(r)
   })
+
+  // Sort today's list: active first, then overdue/done/expired/cancelled
+  const todaySorted = today.slice().sort((a, b) => {
+    const toDateSafe = (v) => (typeof v?.toDate === 'function' ? v.toDate() : v ? new Date(v) : null)
+    const now = new Date()
+    const startA = toDateSafe(a.startTime); const endA = toDateSafe(a.endTime)
+    const startB = toDateSafe(b.startTime); const endB = toDateSafe(b.endTime)
+    const checkedInA = Boolean(toDateSafe(a.checkedInAt)); const checkedOutA = Boolean(toDateSafe(a.checkedOutAt))
+    const checkedInB = Boolean(toDateSafe(b.checkedInAt)); const checkedOutB = Boolean(toDateSafe(b.checkedOutAt))
+    const statusA = String(a.status || '').toLowerCase()
+    const statusB = String(b.status || '').toLowerCase()
+    const overdueA = (!checkedInA && ( (startA && startA.getTime() < now.getTime() - 30*60*1000) || (endA && endA < now) ))
+    const overdueB = (!checkedInB && ( (startB && startB.getTime() < now.getTime() - 30*60*1000) || (endB && endB < now) ))
+    const isActiveA = statusA !== 'cancelled' && statusA !== 'expired' && !checkedOutA && !overdueA
+    const isActiveB = statusB !== 'cancelled' && statusB !== 'expired' && !checkedOutB && !overdueB
+    if (isActiveA !== isActiveB) return isActiveA ? -1 : 1
+    // Within same bucket, sort by start time ascending
+    const tA = startA?.getTime?.() || 0
+    const tB = startB?.getTime?.() || 0
+    return tA - tB
+  })
+
+  const sortByStartAsc = (list) => list.slice().sort((a, b) => {
+    const ta = toDate(a.startTime)?.getTime?.() || 0
+    const tb = toDate(b.startTime)?.getTime?.() || 0
+    return ta - tb
+  })
+  const upcomingSorted = sortByStartAsc(upcoming)
+  const yesterdaySorted = sortByStartAsc(yesterday)
+  const olderSorted = sortByStartAsc(older)
 
   /** ===== ACTIONS ===== */
   async function confirm(r) {
-    await updateDoc(
-      doc(db, 'reservations', r.id),
-      {
-        status: 'confirmed',
-        updatedAt: serverTimestamp(),
-      }
-    )
-
-    await updateDoc(
-      doc(db, 'tables', r.tableId),
-      {
-        status: 'reserved',
-        updatedAt: serverTimestamp(),
-      }
-    )
+    await approveReservation({ db, reservation: r })
   }
 
   async function cancel(r) {
@@ -142,14 +170,10 @@ export default function AdminReservationPage() {
   }
 
   async function reject(r) {
-    await updateDoc(
-      doc(db, 'reservations', r.id),
-      {
-        status: 'rejected',
-        updatedAt: serverTimestamp(),
-      }
-    )
+    await rejectReservation({ db, reservation: r })
   }
+
+  // Expiration handled automatically via AdminTablesPage and Cloud Function.
 
   /** ===== UI ===== */
   return (
@@ -166,26 +190,32 @@ export default function AdminReservationPage() {
       />
 
       <Section
-        title="⏳ Waiting for approval"
+        title="Waiting for approval"
         data={waiting}
         onConfirm={confirm}
         onReject={reject}
       />
 
       <Section
-        title="🟢 Reservations today"
-        data={today}
+        title="Reservations today"
+          data={todaySorted}
         onCancel={cancel}
       />
 
       <Section
-        title="🟡 Yesterday"
-        data={yesterday}
+        title="Reservations next days"
+        data={upcomingSorted}
+        onCancel={cancel}
       />
 
       <Section
-        title="📜 Older reservations"
-        data={older}
+        title="Yesterday"
+        data={yesterdaySorted}
+      />
+
+      <Section
+        title="Older reservations"
+        data={olderSorted}
       />
     </div>
   )

@@ -95,24 +95,12 @@ export default function FloorPage() {
       const holdExpiresAt = toDate(r.holdExpiresAt)
       return { ...r, _status: status, startTimeDate, endTimeDate, _holdExpiresAt: holdExpiresAt }
     })
-    .filter((r) => {
-      // Only confirmed reservations mark tables as reserved for customers
-      return r._status === 'confirmed'
-    })
-
-  const reservationByTableId = new Map()
-  for (const r of activeReservations) {
-    if (!r.tableId) continue
-    if (!reservationByTableId.has(r.tableId)) reservationByTableId.set(r.tableId, r)
-  }
+    .filter((r) => r._status === 'confirmed')
 
   const filteredTables = tables.filter((t) => {
     const status = normalizedStatus(t.status)
-    const hasReservation = reservationByTableId.has(t.id)
-
-    const effectiveStatus = hasReservation ? 'reserved' : status
     if (activeStatus === 'all') return true
-    return effectiveStatus === activeStatus
+    return status === activeStatus
   })
 
   const floorIdForTable = (t) => {
@@ -161,7 +149,7 @@ export default function FloorPage() {
 
   const panelTableId = detailsTableId
   const selectedTable = panelTableId ? tables.find((t) => t.id === panelTableId) || null : null
-  const selectedReservation = panelTableId ? reservationByTableId.get(panelTableId) || null : null
+  const selectedReservation = null
 
   const selectedTableImageError = panelTableId ? imageThumbErrorByTableId.get(panelTableId) || false : false
 
@@ -197,7 +185,7 @@ export default function FloorPage() {
   return (
     <div className={activeView === 'map' ? 'card tablesCard tablesCard--map' : 'card'}>
       <div className="tablesTop">
-        <div className="tablesTop__tabs" role="tablist" aria-label="Tables views">
+        {/* <div className="tablesTop__tabs" role="tablist" aria-label="Tables views">
           <button
             type="button"
             className={`tabBtn ${activeView === 'map' ? 'tabBtn--active' : ''}`}
@@ -205,11 +193,10 @@ export default function FloorPage() {
           >
             Table Map
           </button>
-        </div>
+        </div> */}
 
         <div className="tablesTop__meta">
           <h2 className="pageTitle">Tables</h2>
-          <div className="muted">Realtime view of tables</div>
         </div>
       </div>
 
@@ -274,7 +261,6 @@ export default function FloorPage() {
             <TableMap
               tables={mapTables}
               selectedTableId={selectedTableId}
-              reservationByTableId={reservationByTableId}
               normalizedStatus={normalizedStatus}
               statusSymbol={statusSymbol}
               onBackgroundClick={() => closeDetails()}
@@ -292,20 +278,18 @@ export default function FloorPage() {
                 ref={asideRef}
                 className={`tablesAside ${detailsOpen ? 'tablesAside--open' : 'tablesAside--closed'}`}
                 aria-label="Table details"
-                style={{ maxHeight: '80vh', overflowY: 'auto' }}
+                style={{ maxHeight: '95vh', overflowY: 'auto' }}
               >
                 <ReservationPanel
                   title="Reservation Details"
                   subtitle="Selected table information"
                   table={selectedTable}
                   floorLabel={selectedTable ? (selectedTable.floor || floorIdForTable(selectedTable)) : ''}
-                  statusLabel={
-                    selectedTable ? (
-                      <span className={`badge badge--neutral`}>
-                        {String(selectedReservation ? 'reserved' : normalizedStatus(selectedTable.status)).toUpperCase()}
-                      </span>
-                    ) : null
-                  }
+                  statusLabel={selectedTable ? (
+                    <span className={`badge badge--neutral`}>
+                      {String(normalizedStatus(selectedTable.status)).toUpperCase()}
+                    </span>
+                  ) : null}
                   placementLabel={selectedTable ? placementLabel(selectedTable.placement) : ''}
                   headerActions={
                     <>
@@ -330,25 +314,64 @@ export default function FloorPage() {
                     </>
                   }
                   extraCard={(() => {
-                    const todayIso = formatISODate(new Date())
-                    const busy = activeReservations
-                      .filter((r) => r.tableId === panelTableId)
-                      .filter((r) => r.startTimeDate && formatISODate(r.startTimeDate) === todayIso)
+                    const today = new Date()
+                    const now = new Date()
+                    const todayIso = formatISODate(today)
+                    const sevenDaysAhead = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 7)
+                    const sameTable = (r) => r.tableId === panelTableId
+                    const isToday = (r) => r.startTimeDate && formatISODate(r.startTimeDate) === todayIso
+                    const isUpcomingWeek = (r) => {
+                      if (!r.startTimeDate) return false
+                      return r.startTimeDate >= today && r.startTimeDate <= sevenDaysAhead
+                    }
+
+                    const busyToday = activeReservations
+                      .filter(sameTable)
+                      .filter(isToday)
+                      .filter((r) => (r.endTimeDate ? r.endTimeDate >= now : r.startTimeDate >= now))
                       .slice()
                       .sort((a, b) => (a.startTimeDate?.getTime?.() || 0) - (b.startTimeDate?.getTime?.() || 0))
-                    return busy.length > 0 ? (
+
+                    const busyUpcoming = activeReservations
+                      .filter(sameTable)
+                      .filter((r) => !isToday(r) && isUpcomingWeek(r))
+                      .filter((r) => (r.endTimeDate ? r.endTimeDate >= now : r.startTimeDate >= now))
+                      .slice()
+                      .sort((a, b) => (a.startTimeDate?.getTime?.() || 0) - (b.startTimeDate?.getTime?.() || 0))
+
+                    if (busyToday.length === 0 && busyUpcoming.length === 0) return null
+
+                    return (
                       <div className="rowCard" style={{ marginTop: 12 }}>
-                        <div className="rowCard__title">Busy times today</div>
-                        <div className="muted" style={{ marginTop: 4 }}>You can still book other free hours.</div>
-                        <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          {busy.map((r) => (
-                            <span key={r.id} className="badge badge--neutral">
-                              {formatTime(r.startTimeDate)} – {formatTime(r.endTimeDate)}
-                            </span>
-                          ))}
-                        </div>
+                        {busyToday.length > 0 ? (
+                          <>
+                            <div className="rowCard__title">Busy times today</div>
+                            <div className="muted" style={{ marginTop: 4 }}>You can still book other free hours.</div>
+                            <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                              {busyToday.map((r) => (
+                                <span key={`today-${r.id}`} className="badge badge--neutral">
+                                  {formatTime(r.startTimeDate)} – {formatTime(r.endTimeDate)}
+                                </span>
+                              ))}
+                            </div>
+                          </>
+                        ) : null}
+
+                        {busyUpcoming.length > 0 ? (
+                          <>
+                            <div className="rowCard__title" style={{ marginTop: 12 }}>Upcoming busy times (7 days)</div>
+                            <div className="muted" style={{ marginTop: 4 }}>You can still book other free hours.</div>
+                            <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+                              {busyUpcoming.map((r) => (
+                                <span key={`up-${r.id}`} className="badge badge--neutral">
+                                  {formatISODate(r.startTimeDate)} • {formatTime(r.startTimeDate)} – {formatTime(r.endTimeDate)}
+                                </span>
+                              ))}
+                            </div>
+                          </>
+                        ) : null}
                       </div>
-                    ) : null
+                    )
                   })()}
                   showImage
                   imageUrl={selectedTable?.imageUrl}

@@ -6,7 +6,7 @@ function minutesFromMidnight(d) {
   return d.getHours() * 60 + d.getMinutes()
 }
 
-export default function TableTimeline({ tables, reservations, isoDate, onChangeIsoDate, onOpenReservation, occupiedTableIds }) {
+export default function TableTimeline({ tables, reservations, isoDate, onChangeIsoDate, onOpenReservation, occupiedTableIds, nowOffsetMinutes = 0 }) {
   const timelineReservationsForDay = useMemo(() => {
     return reservations.filter((r) => {
       if (!r?.startTimeDate) return false
@@ -73,6 +73,8 @@ export default function TableTimeline({ tables, reservations, isoDate, onChangeI
           <div className="ganttLegend__item"><span className="ganttLegend__swatch swatch--confirmed" />Confirmed</div>
           <div className="ganttLegend__item"><span className="ganttLegend__swatch swatch--hold" />Pending (Hold)</div>
           <div className="ganttLegend__item"><span className="ganttLegend__swatch swatch--occupied" />Occupied</div>
+          <div className="ganttLegend__item"><span className="ganttLegend__swatch swatch--completed" />Completed</div>
+          <div className="ganttLegend__item"><span className="ganttLegend__swatch swatch--manual" />Walk-in</div>
         </div>
       </div>
 
@@ -88,15 +90,31 @@ export default function TableTimeline({ tables, reservations, isoDate, onChangeI
           </div>
         </div>
 
-        <div className="ganttBody">
+        <div className="ganttBody" style={{ position: 'relative' }}>
           {tables.map((t) => {
             const bars = timelineBarsByTableId.get(t.id) || []
             const isOccupied = occupiedTableIds instanceof Set ? occupiedTableIds.has(t.id) : false
+            const now = new Date(Date.now() + (Number(nowOffsetMinutes) || 0) * 60 * 1000)
 
             return (
               <div key={t.id} className="ganttRow">
                 <div className="ganttLabelCell">Table {t.number ?? '—'}</div>
-                <div className="ganttTrack" aria-label={`Timeline for table ${t.number ?? t.id}`}>
+                <div className="ganttTrack" aria-label={`Timeline for table ${t.number ?? t.id}`} style={{ position: 'relative' }}>
+                  {(() => {
+                    const todayIso = formatISODate(new Date())
+                    if (isoDate !== todayIso) return null
+                    const nowM = minutesFromMidnight(now)
+                    if (!Number.isFinite(nowM)) return null
+                    const clampedM = Math.max(openMinutes, Math.min(closeMinutes, nowM))
+                    const leftPx = Math.max(0, ((clampedM - openMinutes) / slotMinutes) * cellWidthPx)
+                    return (
+                      <div
+                        aria-hidden="true"
+                        title="Now"
+                        style={{ position: 'absolute', left: leftPx, top: 0, bottom: 0, width: 2, background: 'red', opacity: 0.6, pointerEvents: 'none' }}
+                      />
+                    )
+                  })()}
                   {isOccupied ? (
                     <div
                       className="ganttBar ganttBar--occupied"
@@ -115,7 +133,16 @@ export default function TableTimeline({ tables, reservations, isoDate, onChangeI
                     const safeEnd = Math.max(0, Math.min(slotCount, endIdx))
                     const left = safeStart * cellWidthPx
                     const width = Math.max(cellWidthPx, (safeEnd - safeStart) * cellWidthPx)
-                    const kind = String(r._status || '').toLowerCase() === 'hold' ? 'hold' : 'confirmed'
+                    const baseStatus = String(r._status || '').toLowerCase()
+                    const kind = baseStatus === 'hold'
+                      ? 'hold'
+                      : baseStatus === 'occupied'
+                        ? 'occupied'
+                        : baseStatus === 'completed'
+                          ? 'completed'
+                          : baseStatus === 'manual'
+                            ? 'manual'
+                            : 'confirmed'
                     return (
                       <button
                         key={r.id}

@@ -3,7 +3,6 @@ import { useMemo } from 'react'
 export default function TableMap({
   tables,
   selectedTableId,
-  reservationByTableId,
   normalizedStatus,
   statusSymbol,
   onTableClick,
@@ -33,8 +32,7 @@ export default function TableMap({
     >
       {tables.map((t) => {
         const status = normalizedStatus(t.status)
-        const hasReservation = reservationByTableId?.has?.(t.id)
-        const effectiveStatus = hasReservation ? 'reserved' : status
+        const effectiveStatus = status
         const isActive = t.id === selectedTableId
 
         return (

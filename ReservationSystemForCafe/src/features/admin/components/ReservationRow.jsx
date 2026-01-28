@@ -16,6 +16,13 @@ export default function ReservationRow({
 }) {
   const navigate = useNavigate()
   const start = toDate(r.startTime)
+  const end = toDate(r.endTime)
+  const checkedInAt = toDate(r.checkedInAt)
+  const checkedOutAt = toDate(r.checkedOutAt)
+  const now = new Date()
+  const status = String(r.status || '').toLowerCase()
+  const isDiningNow = status === 'occupied'
+  const isCompleted = status === 'completed'
   const canCancel =
     r.status === 'confirmed' &&
     start &&
@@ -43,6 +50,12 @@ export default function ReservationRow({
         onClick={e => e.stopPropagation()}
       >
         <StatusBadge status={r.status} />
+        {isDiningNow ? (
+          <span className="badge badge--neutral" style={{ marginLeft: 6 }}>Dining now</span>
+        ) : null}
+        {/* {isCompleted ? (
+          <span className="badge badge--neutral" style={{ marginLeft: 6 }}>Completed</span>
+        ) : null} */}
 
         {r.status === 'hold' && (
           <>
@@ -69,6 +82,7 @@ export default function ReservationRow({
             Cancel
           </button>
         )}
+
       </div>
     </div>
   )

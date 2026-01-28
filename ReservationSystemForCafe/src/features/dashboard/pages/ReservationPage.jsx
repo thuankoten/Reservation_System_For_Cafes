@@ -7,12 +7,13 @@ import {
   query,
   where,
 } from 'firebase/firestore'
-import { useSearchParams } from 'react-router-dom'
-import { signInAnonymously, updateProfile } from 'firebase/auth'
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
+import { signInAnonymously, signOut } from 'firebase/auth'
 import { showErrorAlert } from '../../../shared/utils/errorAlert'
 import { auth, db } from '../../../shared/firebase'
 import { useAuth } from '../../auth/useAuth'
-import { cancelReservation, createHoldReservation } from '../../../shared/services/reservations'
+import { cancelReservation, createHoldReservation } from '../../../shared/services/customer/reservations'
+import { getReservedTableIdsForRange } from '../../../shared/services/customer/availability'
 import {
   formatISODate,
   listStartMinutesForDuration,
@@ -68,7 +69,9 @@ function computeDefaultEndMinutes({ startMinutes, durationMinutes }) {
 }
 
 export default function ReservationPage() {
-  const { user, refreshUser } = useAuth()
+  const { user } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
   const DRAFT_KEY = 'reservationDraft'
   const [searchParams] = useSearchParams()
   const [initialTableId] = useState(() => searchParams.get('tableId') || '')
@@ -100,6 +103,7 @@ export default function ReservationPage() {
   const [customerEmail, setCustomerEmail] = useState('')
   const [customerEmailTouched, setCustomerEmailTouched] = useState(false)
 
+  const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   // Hydrate form from draft saved before redirecting to login
@@ -128,9 +132,7 @@ export default function ReservationPage() {
         if (typeof d.selectedTableId === 'string') setSelectedTableId(d.selectedTableId)
       }
       sessionStorage.removeItem(DRAFT_KEY)
-    } catch {
-      // no-op
-    }
+    } catch {}
   }, [])
 
   useEffect(() => {
@@ -148,9 +150,7 @@ export default function ReservationPage() {
           return ''
         })
       },
-      (e) => {
-        showErrorAlert(e?.message || 'Failed to load tables')
-      }
+      (e) => setError(e?.message || 'Failed to load tables')
     )
 
     return () => unsub()
@@ -166,8 +166,6 @@ export default function ReservationPage() {
     return () => unsub()
   }, [])
 
-  // Removed auto anonymous sign-in to prevent re-login after logout
-  // We will only sign in anonymously at booking time when needed.
 
   useEffect(() => {
     if (!user?.uid) return
@@ -185,18 +183,17 @@ export default function ReservationPage() {
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
         setMyReservations(rows)
 
-        // Auto-cancel any pending reservations not approved by their start time
         const now = new Date()
         for (const r of rows) {
           const status = String(r.status || '').toLowerCase()
           if (status !== 'hold') continue
           const holdDeadline = toDate(r.holdExpiresAt)
           if (holdDeadline && holdDeadline <= now) {
-            cancelReservation({ db, reservationId: r.id, tableId: r.tableId, slotKeys: r.slotKeys }).catch(() => null)
+            cancelReservation({ db, reservationId: r.id, tableId: r.tableId, slotKeys: r.slotKeys }).catch(() => {})
           }
         }
       },
-      (e) => showErrorAlert(e?.message || 'Failed to load reservations')
+      (e) => setError(e?.message || 'Failed to load reservations')
     )
 
     return () => unsub()
@@ -230,37 +227,12 @@ export default function ReservationPage() {
   }, [endMinutes, isoDate, startMinutes])
 
   const reservedTableIdsForSelectedRange = useMemo(() => {
-    const now = new Date()
-    const set = new Set()
-
-    const selectedStart = selectedRange.start
-    const selectedEnd = selectedRange.end
-    if (!(selectedStart instanceof Date) || !(selectedEnd instanceof Date)) return set
-    if (Number.isNaN(selectedStart.getTime()) || Number.isNaN(selectedEnd.getTime())) return set
-    if (selectedEnd <= selectedStart) return set
-
-    for (const r of reservations) {
-      if (!r?.tableId) continue
-      const status = String(r.status || '').toLowerCase()
-      if (status !== 'confirmed' && status !== 'hold') continue
-
-      if (status === 'hold') {
-        const expiresAt = toDate(r.holdExpiresAt)
-        if (!expiresAt || expiresAt <= now) continue
-      }
-
-      const rStart = toDate(r.startTime)
-      const rEnd = toDate(r.endTime)
-      if (!(rStart instanceof Date) || !(rEnd instanceof Date)) continue
-      if (Number.isNaN(rStart.getTime()) || Number.isNaN(rEnd.getTime())) continue
-
-      if (formatISODate(rStart) !== isoDate) continue
-
-      const overlaps = rStart < selectedEnd && rEnd > selectedStart
-      if (overlaps) set.add(r.tableId)
-    }
-
-    return set
+    return getReservedTableIdsForRange({
+      reservations,
+      isoDate,
+      startDate: selectedRange.start,
+      endDate: selectedRange.end,
+    })
   }, [isoDate, reservations, selectedRange.end, selectedRange.start])
 
   const selectedEffectiveStatus = useMemo(() => {
@@ -363,51 +335,103 @@ export default function ReservationPage() {
     })
   }, [myReservations])
 
+  // Group reservations into sections per request
+  const groupedMyReservations = useMemo(() => {
+    const rows = myReservationRows.filter((r) => r._startTime instanceof Date && !Number.isNaN(r._startTime.getTime()))
+
+    const todayIso = formatISODate(new Date())
+    const d = new Date()
+    const yesterday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1)
+    const yesterdayIso = formatISODate(yesterday)
+
+    const statusPriority = (s) => {
+      const k = String(s || '').toLowerCase()
+      if (k === 'confirmed') return 0
+      if (k === 'occupied') return 1
+      if (k === 'completed') return 2
+      if (k === 'expired') return 3
+      if (k === 'cancelled' || k === 'rejected') return 9
+      return 5
+    }
+
+    const sorter = (a, b) => {
+      const pa = statusPriority(a._status)
+      const pb = statusPriority(b._status)
+      if (pa !== pb) return pa - pb
+      const ta = a._startTime?.getTime?.() || 0
+      const tb = b._startTime?.getTime?.() || 0
+      return ta - tb
+    }
+
+    const waitingToday = rows
+      .filter((r) => r._status === 'hold' && r._isHoldActive && formatISODate(r._startTime) === todayIso)
+      .slice()
+      .sort((a, b) => (a._startTime - b._startTime))
+
+    const waitingUpcoming = rows
+      .filter((r) => r._status === 'hold' && r._isHoldActive && formatISODate(r._startTime) !== todayIso && r._startTime > new Date())
+      .slice()
+      .sort((a, b) => (a._startTime - b._startTime))
+    const today = rows.filter((r) => r._status !== 'hold' && formatISODate(r._startTime) === todayIso).slice().sort(sorter)
+    const upcoming = rows.filter((r) => r._status !== 'hold' && formatISODate(r._startTime) !== todayIso && r._startTime > new Date()).slice().sort(sorter)
+    const yday = rows.filter((r) => r._status !== 'hold' && formatISODate(r._startTime) === yesterdayIso).slice().sort(sorter)
+    const older = rows.filter((r) => r._status !== 'hold' && r._startTime < new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate())).slice().sort(sorter)
+
+    return { waitingToday, waitingUpcoming, today, upcoming, yday, older }
+  }, [myReservationRows])
+
   async function createReservation() {
+    setError('')
     if (!selectedTableId) {
-      showErrorAlert('Please select a table')
+      setError('Please select a table')
       return
     }
 
     // Chặn chắc chắn nếu bàn không khả dụng
     if (isSelectedTableUnavailable) {
+      setError('This table is not available for the selected time')
       showErrorAlert('Selected table is unavailable')
       return
     }
 
     if (activeHoldReservation) {
-      showErrorAlert('You already have a pending reservation. Please wait for admin confirmation or cancel it.')
+      setError('You already have a pending reservation. Please wait for admin confirmation or cancel it.')
+      showErrorAlert('You already have a pending reservation. Please wait for confirmation or cancel it.')
       return
     }
-    // Guest booking: if not signed-in, sign in anonymously and continue
-    let bookingUser = user
-    if (!bookingUser?.uid) {
+    // Nếu chưa đăng nhập: chuyển sang trang login
+    if (!user?.uid) {
+      // Save current form draft to restore after login
       try {
-        await signInAnonymously(auth)
-        bookingUser = auth.currentUser
-
-        if (bookingUser?.isAnonymous && customerNameValue && !bookingUser.displayName) {
-          await updateProfile(bookingUser, { displayName: String(customerNameValue).trim() })
-          bookingUser = auth.currentUser
-          await refreshUser?.()
+        const draft = {
+          selectedTableId,
+          isoDate,
+          startMinutes,
+          endMinutes,
+          partySize,
+          customerName,
+          customerEmail,
+          customerPhone,
         }
-      } catch {
-        showErrorAlert('Không thể tạo phiên đặt bàn (anonymous). Vui lòng thử lại.')
-        return
-      }
+        sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
+      } catch {}
+      showErrorAlert('Vui lòng đăng nhập để đặt bàn')
+      navigate('/auth/login', { replace: false, state: { from: location } })
+      return
     }
 
     if (!selectedTable) {
-      showErrorAlert('Selected table not found')
+      setError('Selected table not found')
       return
     }
 
     if (String(selectedTable.status || 'available').toLowerCase() === 'occupied') {
-      showErrorAlert('Selected table is occupied')
+      setError('Selected table is occupied')
       return
     }
     if (reservedTableIdsForSelectedRange.has(selectedTable.id)) {
-      showErrorAlert('This table is not available for the selected time')
+      setError('This table is not available for the selected time')
+      try { toast.error('Selected table is unavailable') } catch {}
       return
     }
 
@@ -415,32 +439,33 @@ export default function ReservationPage() {
     const selectedStartDate = buildDateFromISOAndMinutes(isoDate, Number(startMinutes))
     const now = new Date()
     if (formatISODate(selectedStartDate) === formatISODate(now) && selectedStartDate <= now) {
+      setError('Start time must be in the future')
       showErrorAlert('Start time must be in the future')
       return
     }
 
     const dur = Number(derivedDurationMinutes)
     if (!Number.isFinite(dur) || dur <= 0) {
-      showErrorAlert('Invalid time range')
+      setError('Invalid time range')
       return
     }
     if (dur % TIMELINE_CONFIG.stepMinutes !== 0) {
-      showErrorAlert('Time must be in 30-minute blocks')
+      setError('Time must be in 30-minute blocks')
       return
     }
     if (dur > TIMELINE_CONFIG.maxDurationMinutes) {
-      showErrorAlert('Duration exceeds max (6h)')
+      setError('Duration exceeds max (6h)')
       return
     }
 
     const seats = Number(selectedTable.seats)
     const party = Number(partySize)
     if (!Number.isFinite(party) || party < 1) {
-      showErrorAlert('Party size must be at least 1')
+      setError('Party size must be at least 1')
       return
     }
     if (Number.isFinite(seats) && Number.isFinite(party) && party > seats + 1) {
-      showErrorAlert('Party size exceeds max allowed (seats + 1)')
+      setError('Party size exceeds max allowed (seats + 1)')
       return
     }
 
@@ -448,7 +473,7 @@ export default function ReservationPage() {
     try {
       const reservationId = await createHoldReservation({
         db,
-        user: bookingUser,
+        user,
         table: selectedTable,
         isoDate,
         startMinutes,
@@ -460,23 +485,24 @@ export default function ReservationPage() {
       })
       if (reservationId) {
         // Success can keep using toast or alert; use alert per request
-        showErrorAlert('Reservation request submitted. Await admin approval.')
+        showErrorAlert('Reservation request submitted. Awaiting approval.')
         // Reset selection to placeholder to avoid immediate unavailable error for the same slot
         setAutoSelectTable(false)
         setSelectedTableId('')
       }
     } catch (e) {
-      showErrorAlert(e?.message || 'Failed to create reservation')
+      setError(e?.message || 'Failed to create reservation')
     } finally {
       setSubmitting(false)
     }
   }
 
   async function onCancelReservation(reservationId, tableId, slotKeys) {
+    setError('')
     try {
       await cancelReservation({ db, reservationId, tableId, slotKeys })
     } catch (e) {
-      showErrorAlert(e?.message || 'Failed to cancel reservation')
+      setError(e?.message || 'Failed to cancel reservation')
     }
   }
 
@@ -632,56 +658,235 @@ export default function ReservationPage() {
       <div className="card">
         <h3 style={{ marginTop: 0 }}>My reservations</h3>
         <div className="stack">
-          {!user || user?.isAnonymous ? <div className="muted">Sign in to see your reservation history on this device.</div> : null}
+          {!user || user?.isAnonymous ? <div className="muted">Sign in (not as a guest) to see your reservation history on this device.</div> : null}
           {user && !user.isAnonymous && myReservations.length === 0 ? <div className="muted">No reservations yet.</div> : null}
-          {user && !user.isAnonymous ? myReservationRows.map((r) => (
-            <div
-              key={r.id}
-              className="rowCard"
-              role="button"
-              tabIndex={0}
-              onClick={() => {
-                setExpandedIds((prev) => {
-                  const next = new Set(prev)
-                  if (next.has(r.id)) next.delete(r.id)
-                  else next.add(r.id)
-                  return next
-                })
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  setExpandedIds((prev) => {
-                    const next = new Set(prev)
-                    if (next.has(r.id)) next.delete(r.id)
-                    else next.add(r.id)
-                    return next
-                  })
-                }
-              }}
-            >
-              <div>
-                <div className="rowCard__title">Table: {r.tableNumber ?? r.tableId}</div>
-                <div className="muted">Party size: {r.partySize ?? '—'}</div>
-                <div className="muted">Time: {r._startTime ? r._startTime.toLocaleString() : '—'} → {r._endTime ? r._endTime.toLocaleString() : '—'}</div>
-                <div className="muted">Status: {r._statusLabel}</div>
-                {expandedIds.has(r.id) ? (
-                  <div className="kv" style={{ marginTop: 8 }}>
-                    <div className="kv__row"><div className="kv__k">Name</div><div className="kv__v">{r.customerName ?? '—'}</div></div>
-                    <div className="kv__row"><div className="kv__k">Phone</div><div className="kv__v">{r.customerPhone ?? '—'}</div></div>
-                    <div className="kv__row"><div className="kv__k">Email</div><div className="kv__v">{r.customerEmail ?? r.userEmail ?? '—'}</div></div>
-                  </div>
-                ) : null}
-              </div>
-              <div>
-                {['hold', 'confirmed'].includes(String(r._status || '').toLowerCase()) ? (
-                  <button onClick={() => onCancelReservation(r.id, r.tableId, r.slotKeys)} className="btn">
-                    Cancel
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          )) : null}
+
+          {user && !user.isAnonymous ? (
+            <>
+              {groupedMyReservations.waitingToday.length > 0 ? (
+                <>
+                  <div style={{ marginTop: 6, fontWeight: 700 }}>Waiting for approval</div>
+                  {groupedMyReservations.waitingToday.map((r) => (
+                    <div
+                      key={r.id}
+                      className="rowCard"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        setExpandedIds((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(r.id)) next.delete(r.id)
+                          else next.add(r.id)
+                          return next
+                        })
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          setExpandedIds((prev) => {
+                            const next = new Set(prev)
+                            if (next.has(r.id)) next.delete(r.id)
+                            else next.add(r.id)
+                            return next
+                          })
+                        }
+                      }}
+                    >
+                      <div>
+                        <div className="rowCard__title">Table: {r.tableNumber ?? r.tableId}</div>
+                        <div className="muted">Party size: {r.partySize ?? '—'}</div>
+                        <div className="muted">Time: {r._startTime ? r._startTime.toLocaleString() : '—'} → {r._endTime ? r._endTime.toLocaleString() : '—'}</div>
+                        <div className="muted">Status: {r._statusLabel}</div>
+                        {expandedIds.has(r.id) ? (
+                          <div className="kv" style={{ marginTop: 8 }}>
+                            <div className="kv__row"><div className="kv__k">Name</div><div className="kv__v">{r.customerName ?? '—'}</div></div>
+                            <div className="kv__row"><div className="kv__k">Phone</div><div className="kv__v">{r.customerPhone ?? '—'}</div></div>
+                            <div className="kv__row"><div className="kv__k">Email</div><div className="kv__v">{r.customerEmail ?? r.userEmail ?? '—'}</div></div>
+                          </div>
+                        ) : null}
+                      </div>
+                      <div>
+                        <button onClick={() => onCancelReservation(r.id, r.tableId, r.slotKeys)} className="btn">Cancel</button>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              ) : null}
+
+              {groupedMyReservations.waitingUpcoming.length > 0 ? (
+                <>
+                  <div style={{ marginTop: 12, fontWeight: 700 }}>Next days (Pending approval)</div>
+                  {groupedMyReservations.waitingUpcoming.map((r) => (
+                    <div key={r.id} className="rowCard" role="button" tabIndex={0}
+                      onClick={() => {
+                        setExpandedIds((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(r.id)) next.delete(r.id)
+                          else next.add(r.id)
+                          return next
+                        })
+                      }}
+                    >
+                      <div>
+                        <div className="rowCard__title">Table: {r.tableNumber ?? r.tableId}</div>
+                        <div className="muted">Party size: {r.partySize ?? '—'}</div>
+                        <div className="muted">Time: {r._startTime ? r._startTime.toLocaleString() : '—'} → {r._endTime ? r._endTime.toLocaleString() : '—'}</div>
+                        <div className="muted">Status: {r._statusLabel}</div>
+                        {expandedIds.has(r.id) ? (
+                          <div className="kv" style={{ marginTop: 8 }}>
+                            <div className="kv__row"><div className="kv__k">Name</div><div className="kv__v">{r.customerName ?? '—'}</div></div>
+                            <div className="kv__row"><div className="kv__k">Phone</div><div className="kv__v">{r.customerPhone ?? '—'}</div></div>
+                            <div className="kv__row"><div className="kv__k">Email</div><div className="kv__v">{r.customerEmail ?? r.userEmail ?? '—'}</div></div>
+                          </div>
+                        ) : null}
+                      </div>
+                      <div>
+                        <button onClick={() => onCancelReservation(r.id, r.tableId, r.slotKeys)} className="btn">Cancel</button>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              ) : null}
+
+              {groupedMyReservations.today.length > 0 ? (
+                <>
+                  <div style={{ marginTop: 12, fontWeight: 700 }}>Reservations today</div>
+                  {groupedMyReservations.today.map((r) => (
+                    <div key={r.id} className="rowCard" role="button" tabIndex={0}
+                      onClick={() => {
+                        setExpandedIds((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(r.id)) next.delete(r.id)
+                          else next.add(r.id)
+                          return next
+                        })
+                      }}
+                    >
+                      <div>
+                        <div className="rowCard__title">Table: {r.tableNumber ?? r.tableId}</div>
+                        <div className="muted">Party size: {r.partySize ?? '—'}</div>
+                        <div className="muted">Time: {r._startTime ? r._startTime.toLocaleString() : '—'} → {r._endTime ? r._endTime.toLocaleString() : '—'}</div>
+                        <div className="muted">Status: {r._statusLabel}</div>
+                        {expandedIds.has(r.id) ? (
+                          <div className="kv" style={{ marginTop: 8 }}>
+                            <div className="kv__row"><div className="kv__k">Name</div><div className="kv__v">{r.customerName ?? '—'}</div></div>
+                            <div className="kv__row"><div className="kv__k">Phone</div><div className="kv__v">{r.customerPhone ?? '—'}</div></div>
+                            <div className="kv__row"><div className="kv__k">Email</div><div className="kv__v">{r.customerEmail ?? r.userEmail ?? '—'}</div></div>
+                          </div>
+                        ) : null}
+                      </div>
+                      <div>
+                        {['hold', 'confirmed'].includes(String(r._status || '').toLowerCase()) ? (
+                          <button onClick={() => onCancelReservation(r.id, r.tableId, r.slotKeys)} className="btn">Cancel</button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </>
+              ) : null}
+
+              {groupedMyReservations.upcoming.length > 0 ? (
+                <>
+                  <div style={{ marginTop: 12, fontWeight: 700 }}>Next days</div>
+                  {groupedMyReservations.upcoming.map((r) => (
+                    <div key={r.id} className="rowCard" role="button" tabIndex={0}
+                      onClick={() => {
+                        setExpandedIds((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(r.id)) next.delete(r.id)
+                          else next.add(r.id)
+                          return next
+                        })
+                      }}
+                    >
+                      <div>
+                        <div className="rowCard__title">Table: {r.tableNumber ?? r.tableId}</div>
+                        <div className="muted">Party size: {r.partySize ?? '—'}</div>
+                        <div className="muted">Time: {r._startTime ? r._startTime.toLocaleString() : '—'} → {r._endTime ? r._endTime.toLocaleString() : '—'}</div>
+                        <div className="muted">Status: {r._statusLabel}</div>
+                        {expandedIds.has(r.id) ? (
+                          <div className="kv" style={{ marginTop: 8 }}>
+                            <div className="kv__row"><div className="kv__k">Name</div><div className="kv__v">{r.customerName ?? '—'}</div></div>
+                            <div className="kv__row"><div className="kv__k">Phone</div><div className="kv__v">{r.customerPhone ?? '—'}</div></div>
+                            <div className="kv__row"><div className="kv__k">Email</div><div className="kv__v">{r.customerEmail ?? r.userEmail ?? '—'}</div></div>
+                          </div>
+                        ) : null}
+                      </div>
+                      <div>
+                        {['hold', 'confirmed'].includes(String(r._status || '').toLowerCase()) ? (
+                          <button onClick={() => onCancelReservation(r.id, r.tableId, r.slotKeys)} className="btn">Cancel</button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </>
+              ) : null}
+
+              {groupedMyReservations.yday.length > 0 ? (
+                <>
+                  <div style={{ marginTop: 12, fontWeight: 700 }}>Yesterday</div>
+                  {groupedMyReservations.yday.map((r) => (
+                    <div key={r.id} className="rowCard" role="button" tabIndex={0}
+                      onClick={() => {
+                        setExpandedIds((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(r.id)) next.delete(r.id)
+                          else next.add(r.id)
+                          return next
+                        })
+                      }}
+                    >
+                      <div>
+                        <div className="rowCard__title">Table: {r.tableNumber ?? r.tableId}</div>
+                        <div className="muted">Party size: {r.partySize ?? '—'}</div>
+                        <div className="muted">Time: {r._startTime ? r._startTime.toLocaleString() : '—'} → {r._endTime ? r._endTime.toLocaleString() : '—'}</div>
+                        <div className="muted">Status: {r._statusLabel}</div>
+                        {expandedIds.has(r.id) ? (
+                          <div className="kv" style={{ marginTop: 8 }}>
+                            <div className="kv__row"><div className="kv__k">Name</div><div className="kv__v">{r.customerName ?? '—'}</div></div>
+                            <div className="kv__row"><div className="kv__k">Phone</div><div className="kv__v">{r.customerPhone ?? '—'}</div></div>
+                            <div className="kv__row"><div className="kv__k">Email</div><div className="kv__v">{r.customerEmail ?? r.userEmail ?? '—'}</div></div>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </>
+              ) : null}
+
+              {groupedMyReservations.older.length > 0 ? (
+                <>
+                  <div style={{ marginTop: 12, fontWeight: 700 }}>Older</div>
+                  {groupedMyReservations.older.map((r) => (
+                    <div key={r.id} className="rowCard" role="button" tabIndex={0}
+                      onClick={() => {
+                        setExpandedIds((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(r.id)) next.delete(r.id)
+                          else next.add(r.id)
+                          return next
+                        })
+                      }}
+                    >
+                      <div>
+                        <div className="rowCard__title">Table: {r.tableNumber ?? r.tableId}</div>
+                        <div className="muted">Party size: {r.partySize ?? '—'}</div>
+                        <div className="muted">Time: {r._startTime ? r._startTime.toLocaleString() : '—'} → {r._endTime ? r._endTime.toLocaleString() : '—'}</div>
+                        <div className="muted">Status: {r._statusLabel}</div>
+                        {expandedIds.has(r.id) ? (
+                          <div className="kv" style={{ marginTop: 8 }}>
+                            <div className="kv__row"><div className="kv__k">Name</div><div className="kv__v">{r.customerName ?? '—'}</div></div>
+                            <div className="kv__row"><div className="kv__k">Phone</div><div className="kv__v">{r.customerPhone ?? '—'}</div></div>
+                            <div className="kv__row"><div className="kv__k">Email</div><div className="kv__v">{r.customerEmail ?? r.userEmail ?? '—'}</div></div>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </>
+              ) : null}
+            </>
+          ) : null}
         </div>
       </div>
     </div>

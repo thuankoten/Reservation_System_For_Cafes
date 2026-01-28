@@ -6,6 +6,7 @@ export default function AdminDashboardLayout() {
     <div className="dashboardShell">
       <Sidebar role="Administrator" 
       items={[
+        {to: '/admin/dashboard/overview', label: 'Dashboard' },
         {to: '/admin/dashboard/tables', label: 'Tables' },
         {to: '/admin/dashboard/reservations', label:'Reservations'},
         {to: '/admin/dashboard/accounts', label: 'Accounts' }

@@ -16,6 +16,11 @@
   color: #155724;
 }
 
+.statusBadge--confirmed {
+  background: #d4edda;
+  color: #155724;
+}
+
 .statusBadge--rejected {
   background: #f8d7da;
   color: #721c24;

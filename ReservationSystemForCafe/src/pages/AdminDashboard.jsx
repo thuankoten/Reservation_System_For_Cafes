@@ -1,81 +1,117 @@
-import React, { useState, useEffect } from "react";
-import styles from "./AdminDashboard.module.css";
-import { db } from "../shared/firebase"; 
-import { collection, onSnapshot, query, orderBy, limit } from "firebase/firestore";
+import { useEffect, useMemo, useState } from 'react'
+import { db } from '../shared/firebase'
+import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore'
 
-const AdminDashboard = () => {
-  const [stats, setStats] = useState({ total: 0, available: 0, occupied: 0 });
-  const [activities, setActivities] = useState([]);
+function toDate(v) {
+  if (!v) return null
+  if (typeof v?.toDate === 'function') return v.toDate()
+  try { return new Date(v) } catch { return null }
+}
+
+export default function AdminDashboard() {
+  const [tables, setTables] = useState([])
+  const [reservations, setReservations] = useState([])
+  
 
   useEffect(() => {
-    if (!db) return;
+    const unsubTables = onSnapshot(collection(db, 'tables'), (snap) => {
+      setTables(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    })
 
-    
-    const unsubscribeTables = onSnapshot(collection(db, "tables"), (snapshot) => {
-      let t = 0, a = 0, o = 0;
-      snapshot.forEach((doc) => {
-        t++;
-        if (doc.data().status === 'available') a++;
-        else o++;
-      });
-      setStats({ total: t, available: a, occupied: o });
-    });
+    const qRes = query(collection(db, 'reservations'), orderBy('createdAt', 'desc'), limit(50))
+    const unsubRes = onSnapshot(qRes, (snap) => {
+      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      setReservations(rows)
+    })
 
-    
-    const q = query(collection(db, "reservations"), orderBy("createdAt", "desc"), limit(5));
-    const unsubscribeEvents = onSnapshot(q, (snapshot) => {
-      const list = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setActivities(list);
-    });
+    return () => { unsubTables(); unsubRes() }
+  }, [])
 
-    return () => {
-      unsubscribeTables();
-      unsubscribeEvents();
-    };
-  }, []);
+  const stats = useMemo(() => {
+    const totalTables = tables.length
+    let available = 0, occupied = 0
+    for (const t of tables) {
+      const st = String(t.status || 'available').toLowerCase()
+      if (st === 'occupied') occupied += 1
+      else available += 1
+    }
+
+    const now = new Date()
+    const todayIso = now.toISOString().slice(0,10)
+    let pending = 0, todayCount = 0, upcoming = 0
+    for (const r of reservations) {
+      const s = String(r.status || '').toLowerCase()
+      if (s === 'hold') pending += 1
+      const start = toDate(r.startTime)
+      if (!start) continue
+      const iso = start.toISOString().slice(0,10)
+      if (iso === todayIso) todayCount += 1
+      else if (start > now) upcoming += 1
+    }
+
+    return { totalTables, available, occupied, pending, todayCount, upcoming }
+  }, [tables, reservations])
+
+  const todayCreated = useMemo(() => {
+    const todayIso = new Date().toISOString().slice(0, 10)
+    const list = reservations.filter((r) => {
+      const c = toDate(r.createdAt)
+      return c && c.toISOString().slice(0, 10) === todayIso
+    })
+    list.sort((a, b) => {
+      const ta = toDate(a.createdAt)?.getTime?.() || 0
+      const tb = toDate(b.createdAt)?.getTime?.() || 0
+      return tb - ta
+    })
+    return list
+  }, [reservations])
 
   return (
-    <div className={styles.container}>
-      <div className={styles.header}>
-        <h1>Bảng điều khiển Admin</h1>
-        <p>Chào <strong>Quản trị viên</strong>, đây là tình hình quán hôm nay.</p>
+    <div className="stack">
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+        <h2 className="pageTitle" style={{ margin: 0 }}>Dashboard</h2>
+        <div className="muted">{new Date().toLocaleString()}</div>
       </div>
 
-      <div className={styles.statsGrid}>
-        <div className={styles.card}>
-          <p className={styles.statLabel}>Tổng số bàn</p>
-          <p className={styles.statValue}>{stats.total || 18}</p>
+      <div className="split">
+        <div className="card" style={{ minWidth: 220 }}>
+          <div className="muted">Total tables</div>
+          <div className="bigNumber">{stats.totalTables}</div>
         </div>
-        <div className={styles.card}>
-          <p className={styles.statLabel} style={{ color: '#28a745' }}>Bàn trống</p>
-          <p className={styles.statValue} style={{ color: '#28a745' }}>{stats.available || 14}</p>
+        <div className="card" style={{ minWidth: 220 }}>
+          <div className="muted">Available</div>
+          <div className="bigNumber">{stats.available}</div>
         </div>
-        <div className={styles.card}>
-          <p className={styles.statLabel} style={{ color: '#dc3545' }}>Đang ngồi</p>
-          <p className={styles.statValue} style={{ color: '#dc3545' }}>{stats.occupied || 4}</p>
+        <div className="card" style={{ minWidth: 220 }}>
+          <div className="muted">Occupied</div>
+          <div className="bigNumber">{stats.occupied}</div>
         </div>
       </div>
 
-      <div className={styles.activitySection}>
-        <h3>Hoạt động hệ thống mới nhất</h3>
-        <div className={styles.activityList}>
-          {activities.length > 0 ? activities.map((act) => (
-            <div key={act.id} className={styles.activityItem}>
-              <span>✅ <b>{act.customerName || "Khách"}</b> đã đặt <b>Bàn {act.tableId?.slice(-3).toUpperCase()}</b></span>
-              <span className={styles.time}>
-                {act.createdAt?.toDate ? act.createdAt.toDate().toLocaleTimeString('vi-VN') : "Vừa xong"}
-              </span>
-            </div>
-          )) : (
-            <p style={{ color: '#999', textAlign: 'center' }}>Đang chờ dữ liệu...</p>
+      <div className="card">
+        <div className="miniCard__title">Reservations created today</div>
+        <div className="stack" style={{ marginTop: 8 }}>
+          {todayCreated.length === 0 ? (
+            <div className="muted">No reservations created today.</div>
+          ) : (
+            todayCreated.map((r) => {
+              const created = toDate(r.createdAt)
+              const start = toDate(r.startTime)
+              const label = r.customerName || r.userEmail || '—'
+              return (
+                <div key={r.id} className="miniCard" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="tile__title">{label}</div>
+                    <div className="muted">Table {r.tableNumber || r.tableId} • {r.status}</div>
+                    {start ? <div className="muted">Start: {start.toLocaleString()}</div> : null}
+                  </div>
+                  <div className="muted">Created: {created ? created.toLocaleTimeString() : '—'}</div>
+                </div>
+              )
+            })
           )}
         </div>
       </div>
     </div>
-  );
-};
-
-export default AdminDashboard;
+  )
+}
