@@ -1,55 +1,70 @@
+/* ===== Wrapper ===== */
 .reservationFilter {
-  width: 100%;
-  max-width: 320px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
 
+/* ===== Search input ===== */
+.reservationSearch {
+  flex: 1;
   padding: 10px 14px;
-  padding-right: 44px; /* chừa chỗ cho mũi tên */
+  border-radius: 8px;
+  border: 1px solid #d0d5dd;
+  font-size: 14px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.reservationSearch::placeholder {
+  color: #98a2b3;
+}
+
+.reservationSearch:focus {
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
+}
+
+/* ===== Select (filter status) ===== */
+.reservationSelect {
+  min-width: 160px;
+  padding: 10px 14px;
+  padding-right: 44px;
 
   font-size: 14px;
   font-weight: 500;
 
   border-radius: 10px;
   border: 1px solid #ddd;
-
   background-color: #fff;
   color: #222;
 
-  outline: none;
   cursor: pointer;
+  outline: none;
 
-  /* remove native arrow */
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
 
-  /* custom arrow */
   background-image: url("data:image/svg+xml,%3Csvg width='12' height='12' viewBox='0 0 20 20' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M5 7L10 12L15 7' stroke='%23666' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-
-  /* 👇 chỉnh mũi tên vào trái */
-  background-position: right 18px center;
+  background-position: right 16px center;
   background-size: 12px;
 
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-/* Hover */
-.reservationFilter:hover {
+.reservationSelect:hover {
   border-color: #bbb;
 }
 
-/* Focus */
-.reservationFilter:focus {
+.reservationSelect:focus {
   border-color: #4f46e5;
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
 }
 
-/* Disabled */
-.reservationFilter:disabled {
-  background-color: #f5f5f5;
-  color: #999;
-  cursor: not-allowed;
-}
+/* ===== Filter pill button ===== */
 .filterBtn {
   padding: 6px 12px;
   border-radius: 999px;
@@ -65,9 +80,10 @@
   border-color: #000;
 }
 
-/* Mobile */
+/* ===== Mobile ===== */
 @media (max-width: 480px) {
   .reservationFilter {
-    max-width: 100%;
+    flex-direction: column;
+    align-items: stretch;
   }
 }

@@ -17,117 +17,209 @@ function toDate(v) {
   return new Date(v)
 }
 
+function isSameDay(a, b) {
+  return (
+    a &&
+    b &&
+    a.toDateString() === b.toDateString()
+  )
+}
+
 export default function AdminReservationPage() {
   const [rows, setRows] = useState([])
-  const [filter, setFilter] = useState('all') // ✅ FIX: mặc định ALL
+  const [filter, setFilter] = useState('all')
+  const [keyword, setKeyword] = useState('')
 
+  /** ===== LOAD DATA ===== */
   useEffect(() => {
     const q = query(collection(db, 'reservations'))
-
     return onSnapshot(q, snap => {
-      setRows(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+      setRows(
+        snap.docs.map(d => ({
+          id: d.id,
+          ...d.data(),
+        }))
+      )
     })
   }, [])
 
-  /** ================= FILTER ================= */
-  const filtered = useMemo(() => {
-    if (filter === 'all') return rows // ✅ ALL bao gồm HOLD
+  /** ===== SEARCH ===== */
+  const searched = useMemo(() => {
+    if (!keyword.trim()) return rows
+    const k = keyword.toLowerCase()
 
-    return rows.filter(r => {
-      if (filter === 'confirmed') return r.status === 'confirmed'
-      if (filter === 'expired') return r.status === 'expired'
-      return r.status === filter
-    })
-  }, [rows, filter])
-
-  /** ================= SPLIT TODAY / HISTORY ================= */
-  const todayStr = new Date().toDateString()
-
-  const pendingToday = useMemo(
-    () =>
-      filtered.filter(r => {
-        if (r.status !== 'hold') return false
-        const created = toDate(r.createdAt)
-        return created?.toDateString() === todayStr
-      }),
-    [filtered, todayStr]
-  )
-
-  const history = useMemo(
-    () =>
-      filtered.filter(r => {
-        const created = toDate(r.createdAt)
-        if (!created) return true
-        return (
-          r.status !== 'hold' ||
-          created.toDateString() !== todayStr
+    return rows.filter(r =>
+      [
+        r.customerName,
+        r.userEmail,
+        r.tableNumber,
+      ]
+        .filter(Boolean)
+        .some(v =>
+          String(v).toLowerCase().includes(k)
         )
-      }),
-    [filtered, todayStr]
+    )
+  }, [rows, keyword])
+
+  /** ===== FILTER STATUS ===== */
+  const filtered = useMemo(() => {
+    if (filter === 'all') return searched
+    return searched.filter(
+      r => r.status === filter
+    )
+  }, [searched, filter])
+
+  /** ===== GROUP BY TIME ===== */
+  const now = new Date()
+  const yesterdayDate = new Date()
+  yesterdayDate.setDate(
+    yesterdayDate.getDate() - 1
   )
 
-  /** ================= ACTIONS ================= */
-  async function approve(r) {
-    await updateDoc(doc(db, 'reservations', r.id), {
-      status: 'confirmed',
-      updatedAt: serverTimestamp(),
-    })
+  const waiting = []
+  const today = []
+  const yesterday = []
+  const older = []
 
-    await updateDoc(doc(db, 'tables', r.tableId), {
-      status: 'reserved',
-      updatedAt: serverTimestamp(),
-    })
+  filtered.forEach(r => {
+    const start = toDate(r.startTime)
+
+    if (r.status === 'hold') {
+      waiting.push(r)
+      return
+    }
+
+    if (start && isSameDay(start, now)) {
+      today.push(r)
+    } else if (
+      start &&
+      isSameDay(start, yesterdayDate)
+    ) {
+      yesterday.push(r)
+    } else {
+      older.push(r)
+    }
+  })
+
+  /** ===== ACTIONS ===== */
+  async function confirm(r) {
+    await updateDoc(
+      doc(db, 'reservations', r.id),
+      {
+        status: 'confirmed',
+        updatedAt: serverTimestamp(),
+      }
+    )
+
+    await updateDoc(
+      doc(db, 'tables', r.tableId),
+      {
+        status: 'reserved',
+        updatedAt: serverTimestamp(),
+      }
+    )
+  }
+
+  async function cancel(r) {
+    const start = toDate(r.startTime)
+    if (start && start <= new Date()) return
+
+    await updateDoc(
+      doc(db, 'reservations', r.id),
+      {
+        status: 'cancelled',
+        updatedAt: serverTimestamp(),
+      }
+    )
+
+    await updateDoc(
+      doc(db, 'tables', r.tableId),
+      {
+        status: 'available',
+        updatedAt: serverTimestamp(),
+      }
+    )
   }
 
   async function reject(r) {
-    await updateDoc(doc(db, 'reservations', r.id), {
-      status: 'rejected',
-      updatedAt: serverTimestamp(),
-    })
-
-    await updateDoc(doc(db, 'tables', r.tableId), {
-      status: 'available',
-      updatedAt: serverTimestamp(),
-    })
+    await updateDoc(
+      doc(db, 'reservations', r.id),
+      {
+        status: 'rejected',
+        updatedAt: serverTimestamp(),
+      }
+    )
   }
 
-  /** ================= UI ================= */
+  /** ===== UI ===== */
   return (
     <div className="stack">
-      <h2 className="pageTitle">Admin • Reservations</h2>
+      <h2 className="pageTitle">
+        Admin • Reservations
+      </h2>
 
-      <ReservationFilter value={filter} onChange={setFilter} />
+      <ReservationFilter
+        value={filter}
+        onChange={setFilter}
+        keyword={keyword}
+        onKeywordChange={setKeyword}
+      />
 
-      {/* ===== TODAY ===== */}
-      <h3 style={{ marginTop: 16 }}>
-        ⏳ Reservations waiting for approval (Today)
-      </h3>
+      <Section
+        title="⏳ Waiting for approval"
+        data={waiting}
+        onConfirm={confirm}
+        onReject={reject}
+      />
 
-      {pendingToday.length === 0 && (
-        <div className="muted">No reservations to approve today</div>
-      )}
+      <Section
+        title="🟢 Reservations today"
+        data={today}
+        onCancel={cancel}
+      />
 
-      {pendingToday.map(r => (
-        <ReservationRow
-          key={r.id}
-          r={r}
-          onApprove={approve}
-          onReject={reject}
-        />
-      ))}
+      <Section
+        title="🟡 Yesterday"
+        data={yesterday}
+      />
 
-      <hr style={{ margin: '24px 0', opacity: 0.25 }} />
-
-      {/* ===== HISTORY ===== */}
-      <h3>📜 Previous reservations</h3>
-
-      {history.length === 0 && (
-        <div className="muted">No previous reservations</div>
-      )}
-
-      {history.map(r => (
-        <ReservationRow key={r.id} r={r} />
-      ))}
+      <Section
+        title="📜 Older reservations"
+        data={older}
+      />
     </div>
   )
 }
+
+/** ===== SECTION ===== */
+function Section({ title, data, ...actions }) {
+  return (
+    <>
+      <h3 style={{ marginTop: 24 }}>
+        {title}
+      </h3>
+
+      {data.length === 0 && (
+        <div className="muted">
+          No reservations
+        </div>
+      )}
+
+      {data.map(r => (
+        <ReservationRow
+          key={r.id}
+          r={r}
+          {...actions}
+        />
+      ))}
+
+      <hr
+        style={{
+          margin: '24px 0',
+          opacity: 0.2,
+        }}
+      />
+    </>
+  )
+}
+  

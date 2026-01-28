@@ -10,14 +10,16 @@ function toDate(v) {
 
 export default function ReservationRow({
   r,
-  onApprove,
+  onConfirm,
   onReject,
+  onCancel,
 }) {
   const navigate = useNavigate()
-
-  const createdAt = toDate(r.createdAt)     // ⏰ lúc nhấn đặt bàn
-  const start = toDate(r.startTime)         // 🟢 start time
-  const end = toDate(r.endTime)             // 🔴 end time
+  const start = toDate(r.startTime)
+  const canCancel =
+    r.status === 'confirmed' &&
+    start &&
+    start > new Date()
 
   return (
     <div
@@ -25,45 +27,14 @@ export default function ReservationRow({
       onClick={() =>
         navigate(`/admin/dashboard/reservations/${r.id}`)
       }
-      style={{ cursor: 'pointer' }}
     >
       <div>
-        <div className="reservationTitle">
-          Table {r.tableNumber ?? r.tableId}
-        </div>
-
+        <b>Table {r.tableNumber}</b>
         <div className="muted">
-          Party: {r.partySize ?? '—'} • Seats:{' '}
-          {r.tableSeats ?? '—'}
+          {r.customerName || r.userEmail}
         </div>
-
         <div className="muted">
-          Customer:{' '}
-          {r.customerName ||
-            r.userEmail ||
-            'Guest'}
-        </div>
-
-        {/* ✅ THỜI GIAN KHÁCH NHẤN ĐẶT */}
-        <div className="muted">
-          Booked at:{' '}
-          {createdAt
-            ? createdAt.toLocaleString()
-            : '—'}
-        </div>
-
-        {/* ✅ THỜI GIAN SỬ DỤNG BÀN */}
-        <div className="muted">
-          Using:{' '}
-          {start && end
-            ? `${start.toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })} → ${end.toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })} (${start.toLocaleDateString()})`
-            : '—'}
+          {start?.toLocaleString()}
         </div>
       </div>
 
@@ -77,11 +48,10 @@ export default function ReservationRow({
           <>
             <button
               className="btn btn--primary"
-              onClick={() => onApprove(r)}
+              onClick={() => onConfirm(r)}
             >
-              Approve
+              Confirm
             </button>
-
             <button
               className="btn"
               onClick={() => onReject(r)}
@@ -89,6 +59,15 @@ export default function ReservationRow({
               Reject
             </button>
           </>
+        )}
+
+        {canCancel && (
+          <button
+            className="btn btn--danger"
+            onClick={() => onCancel(r)}
+          >
+            Cancel
+          </button>
         )}
       </div>
     </div>
