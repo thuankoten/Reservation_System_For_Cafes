@@ -185,22 +185,10 @@ export default function FloorPage() {
   return (
     <div className={activeView === 'map' ? 'card tablesCard tablesCard--map' : 'card'}>
       <div className="tablesTop">
-        {/* <div className="tablesTop__tabs" role="tablist" aria-label="Tables views">
-          <button
-            type="button"
-            className={`tabBtn ${activeView === 'map' ? 'tabBtn--active' : ''}`}
-            onClick={() => setActiveView('map')}
-          >
-            Table Map
-          </button>
-        </div> */}
-
         <div className="tablesTop__meta">
-          <h2 className="pageTitle">Tables</h2>
+          <h2 className="pageTitle">Table map in Café</h2>
         </div>
       </div>
-
-      {/* Errors are shown via alert globally; no inline error boxes */}
 
       {(activeView === 'map' || activeView === 'timeline') ? (
         <div className="floorSelectorRow" role="navigation" aria-label="Floor selector">
@@ -441,7 +429,6 @@ export default function FloorPage() {
           </div>
         ) : null}
 
-        {/* Customer view: timeline hidden to avoid exposing active reservations */}
       </div>
     </div>
   )

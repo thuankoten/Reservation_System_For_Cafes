@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { db } from '../../../shared/firebase'
 import ReservationRow from '../components/ReservationRow'
 import ReservationFilter from '../components/ReservationFilter'
-import { approveReservation, rejectReservation, expireOverdueConfirmed as adminExpireOverdue } from '../../../shared/services/admin/reservations'
+import { approveReservationAction, rejectReservationAction, cancelReservation, expireOverdueAction } from '../../../shared/services/admin/reservations'
 
 function toDate(v) {
   if (!v) return null
@@ -24,7 +24,7 @@ export default function AdminReservationPage() {
   const [filter, setFilter] = useState('all')
   const [keyword, setKeyword] = useState('')
 
-  /** ===== LOAD DATA ===== */
+  //  LOAD DATA 
   useEffect(() => {
     const q = query(collection(db, 'reservations'))
     return onSnapshot(q, snap => {
@@ -37,15 +37,12 @@ export default function AdminReservationPage() {
     })
   }, [])
 
-  // Auto-expire moved to AdminTablesPage and Cloud Function.
-  // Also run here to reflect status immediately on this page.
   useEffect(() => {
     let timerId
     async function runExpire() {
       try {
-        await adminExpireOverdue({ db, reservations: rows })
+        await expireOverdueAction({ db, reservations: rows })
       } catch (e) {
-        // ignore errors here to avoid noisy UI
       }
     }
     runExpire()
@@ -53,7 +50,7 @@ export default function AdminReservationPage() {
     return () => timerId && clearInterval(timerId)
   }, [rows])
 
-  /** ===== SEARCH ===== */
+  //  SEARCH 
   const searched = useMemo(() => {
     if (!keyword.trim()) return rows
     const k = keyword.toLowerCase()
@@ -71,7 +68,7 @@ export default function AdminReservationPage() {
     )
   }, [rows, keyword])
 
-  /** ===== FILTER STATUS ===== */
+  //  FILTER STATUS 
   const filtered = useMemo(() => {
     if (filter === 'all') return searched
     return searched.filter(
@@ -79,7 +76,7 @@ export default function AdminReservationPage() {
     )
   }, [searched, filter])
 
-  /** ===== GROUP BY TIME ===== */
+  //  GROUP BY TIME 
   const now = new Date()
   const yesterdayDate = new Date()
   yesterdayDate.setDate(
@@ -143,39 +140,27 @@ export default function AdminReservationPage() {
   const yesterdaySorted = sortByStartAsc(yesterday)
   const olderSorted = sortByStartAsc(older)
 
-  /** ===== ACTIONS ===== */
+  //  ACTIONS 
   async function confirm(r) {
-    await approveReservation({ db, reservation: r })
+    await approveReservationAction({ db, reservation: r })
   }
 
   async function cancel(r) {
-    const start = toDate(r.startTime)
-    if (start && start <= new Date()) return
-
-    await updateDoc(
-      doc(db, 'reservations', r.id),
-      {
-        status: 'cancelled',
-        updatedAt: serverTimestamp(),
-      }
-    )
-
-    await updateDoc(
-      doc(db, 'tables', r.tableId),
-      {
-        status: 'available',
-        updatedAt: serverTimestamp(),
-      }
-    )
+    try {
+      await cancelReservation({ db, reservation: r })
+    } catch (e) {
+      // Reservation already started, cannot cancel
+      throw e
+    }
   }
 
   async function reject(r) {
-    await rejectReservation({ db, reservation: r })
+    await rejectReservationAction({ db, reservation: r })
   }
 
   // Expiration handled automatically via AdminTablesPage and Cloud Function.
 
-  /** ===== UI ===== */
+  //  UI 
   return (
     <div className="stack">
       <h2 className="pageTitle">
@@ -221,7 +206,7 @@ export default function AdminReservationPage() {
   )
 }
 
-/** ===== SECTION ===== */
+//  SECTION 
 function Section({ title, data, ...actions }) {
   return (
     <>

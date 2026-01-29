@@ -17,6 +17,7 @@ export default function ReservationRow({
   const navigate = useNavigate()
   const start = toDate(r.startTime)
   const end = toDate(r.endTime)
+  const createdAt = toDate(r.createdAt)
   const checkedInAt = toDate(r.checkedInAt)
   const checkedOutAt = toDate(r.checkedOutAt)
   const now = new Date()
@@ -27,6 +28,13 @@ export default function ReservationRow({
     r.status === 'confirmed' &&
     start &&
     start > new Date()
+
+  // Calculate duration in hours
+  const durationMs = end && start ? end.getTime() - start.getTime() : 0
+  const durationHours = durationMs / (1000 * 60 * 60)
+  const durationStr = durationHours >= 1 
+    ? `${durationHours.toFixed(1)}h` 
+    : `${Math.round(durationMs / (1000 * 60))}m`
 
   return (
     <div
@@ -40,8 +48,11 @@ export default function ReservationRow({
         <div className="muted">
           {r.customerName || r.userEmail}
         </div>
-        <div className="muted">
-          {start?.toLocaleString()}
+        <div className="muted" style={{ fontSize: '12px', marginTop: '4px' }}>
+          Created: {createdAt?.toLocaleString()}
+        </div>
+        <div className="muted" style={{ fontSize: '12px', marginTop: '2px' }}>
+          Party: {r.partySize} • {durationStr} • {start?.toLocaleString()}
         </div>
       </div>
 

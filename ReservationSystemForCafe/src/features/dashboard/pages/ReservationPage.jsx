@@ -105,6 +105,8 @@ export default function ReservationPage() {
 
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [editingReservation, setEditingReservation] = useState(null)
+  const [editDialog, setEditDialog] = useState({ open: false })
 
   // Hydrate form from draft saved before redirecting to login
   useEffect(() => {
@@ -277,11 +279,13 @@ export default function ReservationPage() {
     const start = Number(startMinutes)
     if (!Number.isFinite(start)) return []
 
+    const today = formatISODate(new Date())
+    const isToday = isoDate === today
     const latestEnd = Math.min(TIMELINE_CONFIG.closeMinutes, start + TIMELINE_CONFIG.maxDurationMinutes)
     const out = []
     for (let m = start + step; m <= latestEnd; m += step) out.push(m)
     return out
-  }, [startMinutes])
+  }, [startMinutes, isoDate])
 
   useEffect(() => {
     setEndMinutes((prev) => {
@@ -484,8 +488,11 @@ export default function ReservationPage() {
         customerEmail: customerEmailValue,
       })
       if (reservationId) {
-        // Success can keep using toast or alert; use alert per request
-        showErrorAlert('Reservation request submitted. Awaiting approval.')
+        // Show success message and redirect to overview
+        const confirmed = window.confirm('Reservation request submitted successfully! Awaiting approval.')
+        if (confirmed) {
+          navigate('/dashboard/overview')
+        }
         // Reset selection to placeholder to avoid immediate unavailable error for the same slot
         setAutoSelectTable(false)
         setSelectedTableId('')
@@ -506,10 +513,71 @@ export default function ReservationPage() {
     }
   }
 
+  function openEditDialog(reservation) {
+    setEditingReservation({ ...reservation })
+    setEditDialog({ open: true })
+  }
+
+  function closeEditDialog() {
+    setEditDialog({ open: false })
+    setEditingReservation(null)
+  }
+
+  async function saveEditReservation() {
+    if (!editingReservation) return
+    setError('')
+    try {
+      await cancelReservation({
+        db,
+        reservationId: editingReservation.id,
+        tableId: editingReservation.tableId,
+        slotKeys: editingReservation.slotKeys,
+      })
+
+      const updatedTable = tables.find((t) => t.id === editingReservation.tableId)
+      if (!updatedTable) {
+        setError('Table not found')
+        return
+      }
+
+      const resIsoDate = editingReservation.isoDate || formatISODate(toDate(editingReservation.startTime))
+      const newResId = await createHoldReservation({
+        db,
+        user,
+        table: updatedTable,
+        isoDate: resIsoDate,
+        startMinutes: editingReservation.startMinutes,
+        durationMinutes: editingReservation.durationMinutes,
+        partySize: editingReservation.partySize,
+        customerName: editingReservation.customerName,
+        customerPhone: editingReservation.customerPhone,
+        customerEmail: editingReservation.customerEmail,
+      })
+
+      if (newResId) {
+        window.confirm('Reservation updated successfully!')
+        closeEditDialog()
+      }
+    } catch (e) {
+      setError(e?.message || 'Failed to update reservation')
+    }
+  }
+
   return (
     <div className="stack">
       <div className="card">
         <h2 className="pageTitle">Reservation</h2>
+        <div style={{ 
+          marginBottom: 16, 
+          padding: '12px 16px', 
+          backgroundColor: '#f0f9ff', 
+          border: '1px solid #bfdbfe',
+          borderRadius: '6px',
+          fontSize: '14px',
+          color: '#1e40af'
+        }}>
+          For the best experience, please <strong><a href="/dashboard/instructions" style={{ color: '#0369a1', textDecoration: 'underline', cursor: 'pointer' }}>read our guidelines</a></strong> before making your reservation.
+        </div>
         <div className="formGrid" style={{ marginTop: 12 }}>
           <label className="field">
             <div className="field__label">Name</div>
@@ -705,7 +773,8 @@ export default function ReservationPage() {
                           </div>
                         ) : null}
                       </div>
-                      <div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button onClick={() => openEditDialog(r)} className="btn">Edit</button>
                         <button onClick={() => onCancelReservation(r.id, r.tableId, r.slotKeys)} className="btn">Cancel</button>
                       </div>
                     </div>
@@ -740,7 +809,8 @@ export default function ReservationPage() {
                           </div>
                         ) : null}
                       </div>
-                      <div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button onClick={() => openEditDialog(r)} className="btn">Edit</button>
                         <button onClick={() => onCancelReservation(r.id, r.tableId, r.slotKeys)} className="btn">Cancel</button>
                       </div>
                     </div>
@@ -889,6 +959,105 @@ export default function ReservationPage() {
           ) : null}
         </div>
       </div>
+
+      {/* Edit Reservation Dialog */}
+      {editDialog.open && editingReservation ? (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+        }}>
+          <div style={{
+            background: '#fff',
+            borderRadius: '8px',
+            padding: '24px',
+            maxWidth: '500px',
+            width: '90%',
+            maxHeight: '80vh',
+            overflowY: 'auto',
+            boxShadow: '0 10px 40px rgba(0, 0, 0, 0.2)',
+          }}>
+            <h3 style={{ marginTop: 0, marginBottom: '16px' }}>Edit Reservation</h3>
+
+            <div className="formGrid" style={{ gap: '12px' }}>
+              <label className="field">
+                <div className="field__label">Party Size</div>
+                <input
+                  type="number"
+                  min="1"
+                  max={maxPartySize}
+                  value={editingReservation.partySize}
+                  onChange={(e) => setEditingReservation({ ...editingReservation, partySize: Number(e.target.value) })}
+                  className="input"
+                />
+              </label>
+
+              <label className="field">
+                <div className="field__label">Start Time (minutes)</div>
+                <input
+                  type="number"
+                  value={editingReservation.startMinutes || 0}
+                  onChange={(e) => setEditingReservation({ ...editingReservation, startMinutes: Number(e.target.value) })}
+                  className="input"
+                />
+              </label>
+
+              <label className="field">
+                <div className="field__label">Duration (minutes)</div>
+                <input
+                  type="number"
+                  min="30"
+                  step="30"
+                  value={editingReservation.durationMinutes || 120}
+                  onChange={(e) => setEditingReservation({ ...editingReservation, durationMinutes: Number(e.target.value) })}
+                  className="input"
+                />
+              </label>
+
+              <label className="field">
+                <div className="field__label">Name</div>
+                <input
+                  value={editingReservation.customerName}
+                  onChange={(e) => setEditingReservation({ ...editingReservation, customerName: e.target.value })}
+                  className="input"
+                />
+              </label>
+
+              <label className="field">
+                <div className="field__label">Phone</div>
+                <input
+                  value={editingReservation.customerPhone}
+                  onChange={(e) => setEditingReservation({ ...editingReservation, customerPhone: e.target.value })}
+                  className="input"
+                />
+              </label>
+
+              <label className="field">
+                <div className="field__label">Email</div>
+                <input
+                  value={editingReservation.customerEmail}
+                  onChange={(e) => setEditingReservation({ ...editingReservation, customerEmail: e.target.value })}
+                  className="input"
+                />
+              </label>
+            </div>
+
+            {error ? <div className="error" style={{ marginTop: '12px' }}>{error}</div> : null}
+
+            <div style={{ display: 'flex', gap: '12px', marginTop: '20px', justifyContent: 'flex-end' }}>
+              <button onClick={closeEditDialog} className="btn" style={{ backgroundColor: '#d1d5db', color: '#1f2937' }}>Cancel</button>
+              <button onClick={saveEditReservation} className="btn">Save Changes</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

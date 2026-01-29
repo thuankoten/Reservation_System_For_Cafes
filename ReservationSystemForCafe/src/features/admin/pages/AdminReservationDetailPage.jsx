@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { db } from '../../../shared/firebase'
 import StatusBadge from '../../../shared/components/StatusBadge'
 import './AdminReservationDetailPage.css'
-import { checkInReservation as adminCheckIn, checkOutTable as adminCheckOut } from '../../../shared/services/admin/reservations'
+import { checkInReservationAction as adminCheckIn, checkOutTableAction as adminCheckOut } from '../../../shared/services/admin/reservations'
 
 export default function AdminReservationDetailPage() {
   const { reservationId } = useParams()

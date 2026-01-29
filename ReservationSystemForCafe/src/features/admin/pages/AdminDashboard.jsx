@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { db } from '../shared/firebase'
+import { db } from '../../../shared/firebase'
 import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore'
 
 function toDate(v) {

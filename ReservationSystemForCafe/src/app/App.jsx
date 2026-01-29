@@ -11,7 +11,7 @@ import OverviewPage from '../features/dashboard/pages/OverviewPage.jsx'
 import ProfilePage from '../features/dashboard/pages/ProfilePage.jsx'
 import FloorPage from '../features/dashboard/pages/FloorPage.jsx'
 import ReservationPage from '../features/dashboard/pages/ReservationPage.jsx'
-import InformationPage from '../features/dashboard/pages/InformationPage.jsx'
+import InstructionsPage from '../features/dashboard/pages/InstructionsPage.jsx'
 import AdminDashboardLayout from '../features/admin/layout/AdminDashboardLayout.jsx'
 import AdminTablesPage from '../features/admin/pages/AdminTablesPage.jsx'
 import AdminCreateTablePage from '../features/admin/pages/AdminCreateTablePage.jsx'
@@ -19,7 +19,7 @@ import AdminAccountsPage from '../features/admin/pages/AdminAccountsPage.jsx'
 import RequireAuth from '../features/auth/RequireAuth.jsx'
 import AdminReservationPage from '../features/admin/pages/AdminReservationPage.jsx'
 import AdminReservationDetailPage from '../features/admin/pages/AdminReservationDetailPage.jsx'
-import AdminDashboard from '../pages/AdminDashboard.jsx'
+import AdminDashboard from '../features/admin/pages/AdminDashboard.jsx'
 
 export default function App() {
   return (
@@ -41,7 +41,7 @@ export default function App() {
             <Route path="profile" element={<ProfilePage />} />
             <Route path="tables" element={<FloorPage />} />
             <Route path="reservations" element={<ReservationPage />} />
-            <Route path="information" element={<InformationPage />} />
+            <Route path="instructions" element={<InstructionsPage />} />
             {/* Chat/Report removed */}
             <Route index element={<Navigate to="overview" replace />} />
           </Route>

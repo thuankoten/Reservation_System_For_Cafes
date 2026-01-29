@@ -1,0 +1,286 @@
+.instructionsPage {
+  display: grid;
+  gap: 24px;
+  max-width: 900px;
+}
+
+.pageTitle {
+  font-size: 28px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 12px 0;
+  border-bottom: 2px solid #e5e7eb;
+  padding-bottom: 12px;
+}
+
+.instructionsSection {
+  display: grid;
+  gap: 12px;
+}
+
+.instructionsSection__title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #374151;
+  margin: 0;
+  padding: 0;
+}
+
+.instructionsCard {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  line-height: 1.6;
+}
+
+.instructionsList {
+  list-style-position: inside;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.instructionsList li {
+  color: #374151;
+  font-size: 15px;
+}
+
+.instructionsList strong {
+  color: #1f2937;
+  font-weight: 600;
+}
+
+.guidelinesList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.guidelinesList li {
+  color: #374151;
+  font-size: 15px;
+  padding-left: 24px;
+  position: relative;
+}
+
+.guidelinesList li::before {
+  content: "-";
+  position: absolute;
+  left: 0;
+  color: #000000;
+  font-weight: bold;
+  font-size: 16px;
+}
+
+.guidelinesList strong {
+  color: #1f2937;
+  font-weight: 600;
+}
+
+.highlight {
+  color: #dc2626;
+}
+
+/* Feature Grid */
+.featureGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.featureItem {
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 16px;
+  text-align: center;
+}
+
+.featureLabel {
+  font-weight: 600;
+  color: #1f2937;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.featureSub {
+  color: #6b7280;
+  font-size: 13px;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Checklist */
+.checklistList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.checklistList li {
+  color: #374151;
+  font-size: 15px;
+  padding-left: 28px;
+  position: relative;
+}
+
+.checklistList li::before {
+  content: "•";
+  position: absolute;
+  left: 8px;
+  color: #3b82f6;
+  font-weight: bold;
+  font-size: 18px;
+}
+
+/* FAQ */
+.faqItem {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.faqItem:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.faqQuestion {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0 0 6px 0;
+}
+
+.faqAnswer {
+  font-size: 14px;
+  color: #6b7280;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Info Box */
+.infoBox {
+  background: linear-gradient(135deg, #f0f9ff 0%, #f0fdf4 100%);
+  border: 1px solid #bfdbfe;
+  border-left: 4px solid #3b82f6;
+}
+
+.infoBox p {
+  color: #1f2937;
+  margin: 0 0 12px 0;
+  font-size: 15px;
+}
+
+.quickLinks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.quickLinks li {
+  color: #374151;
+  font-size: 14px;
+  padding-left: 20px;
+  position: relative;
+}
+
+.quickLinks li::before {
+  content: "→";
+  position: absolute;
+  left: 0;
+  color: #3b82f6;
+  font-weight: bold;
+}
+
+/* Warning Box */
+.warningBox {
+  background: linear-gradient(135deg, #fef3c7 0%, #fef08a 100%);
+  border: 1px solid #fcd34d;
+  border-left: 4px solid #f59e0b;
+}
+
+.warningBox h4 {
+  color: #92400e;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 8px 0;
+}
+
+.warningBox p {
+  color: #78350f;
+  font-size: 14px;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Contact Info */
+.contactInfo {
+  color: #374151;
+  font-size: 15px;
+  margin: 0 0 16px 0;
+}
+
+.contactDetails {
+  background: #f9fafb;
+  border-left: 3px solid #3b82f6;
+  padding: 12px 16px;
+  border-radius: 4px;
+}
+
+.contactDetails p {
+  color: #1f2937;
+  font-size: 14px;
+  margin: 8px 0;
+}
+
+.contactDetails strong {
+  color: #1f2937;
+  font-weight: 600;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .instructionsPage {
+    gap: 16px;
+  }
+
+  .instructionsCard {
+    padding: 16px;
+  }
+
+  .pageTitle {
+    font-size: 24px;
+  }
+
+  .instructionsSection__title {
+    font-size: 16px;
+  }
+
+  .featureGrid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+  }
+
+  .featureItem {
+    padding: 12px;
+  }
+
+  .featureLabel {
+    font-size: 13px;
+  }
+
+  .featureSub {
+    font-size: 12px;
+  }
+}

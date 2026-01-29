@@ -37,3 +37,47 @@ export async function assignFloors({ db, tables }) {
   }
   await batch.commit()
 }
+
+/**
+ * Save table edits (number, seats, floor, imageUrl)
+ */
+export async function saveTableEdit({ db, tableId, draft, existingTables }) {
+  if (!tableId || !draft) throw new Error('Missing tableId or draft')
+
+  const toInt = (value, fallback) => {
+    const n = Number.parseInt(String(value), 10)
+    return Number.isFinite(n) ? n : fallback
+  }
+
+  const number = toInt(draft.number, NaN)
+  const seats = toInt(draft.seats, NaN)
+  const floor = toInt(draft.floor, NaN)
+
+  if (!Number.isFinite(number) || number <= 0) {
+    throw new Error('Table number must be a positive integer')
+  }
+  if (!Number.isFinite(seats) || seats <= 0) {
+    throw new Error('Seats must be a positive integer')
+  }
+
+  const SEATS_OPTIONS = [2, 4, 6, 8]
+  if (!SEATS_OPTIONS.includes(seats)) {
+    throw new Error('Seats must be one of: 2, 4, 6, 8')
+  }
+
+  const exists = existingTables.some((r) => r.id !== tableId && Number(r.number) === number)
+  if (exists) {
+    throw new Error('Another table already has this number')
+  }
+
+  const payload = {
+    number,
+    seats,
+    floor,
+    updatedAt: serverTimestamp(),
+  }
+  if (draft.imageUrl && typeof draft.imageUrl === 'string' && draft.imageUrl.length > 0) {
+    payload.imageUrl = draft.imageUrl
+  }
+  await updateDoc(doc(db, 'tables', tableId), payload)
+}

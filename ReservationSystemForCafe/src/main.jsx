@@ -13,5 +13,4 @@ createRoot(document.getElementById('root')).render(
   </StrictMode>,
 )
 
-// Setup global error alert handlers (skip on auth routes)
 setupGlobalErrorAlerts()

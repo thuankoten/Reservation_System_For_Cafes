@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, writeBatch, limit, getDocFromServer, setDoc } from 'firebase/firestore'
-import { checkInReservation as adminCheckIn, checkOutTable as adminCheckOut, expireOverdueConfirmed as adminExpireOverdue, reconcileTableStatuses as adminReconcile, occupyTableManual as adminOccupyManual, releaseTableManual as adminReleaseManual } from '../../../shared/services/admin/reservations'
+import { collection, doc, onSnapshot, orderBy, query, limit, getDocFromServer, setDoc, serverTimestamp } from 'firebase/firestore'
+import { 
+  checkInReservationAction as adminCheckIn, 
+  checkOutTableAction as adminCheckOut, 
+  expireOverdueAction as adminExpireOverdue, 
+  reconcileTableStatusesAction as adminReconcile, 
+  manualCheckInAction as adminOccupyManual, 
+  manualCheckOutAction as adminReleaseManual 
+} from '../../../shared/services/admin/reservations'
+import { saveTableEdit, removeTable as removeTableService, assignFloors as assignFloorsService } from '../../../shared/services/admin/tables'
 import { db, storage } from '../../../shared/firebase'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { formatISODate, TIMELINE_CONFIG } from '../../../shared/utils/timeline'
@@ -16,11 +24,6 @@ const STATUS_OPTIONS = [
 
 const SEATS_OPTIONS = [2, 4, 6, 8]
 const FLOOR_OPTIONS = [1, 2, 3]
-
-function toInt(value, fallback) {
-  const n = Number.parseInt(String(value), 10)
-  return Number.isFinite(n) ? n : fallback
-}
 
 export default function AdminTablesPage() {
   const navigate = useNavigate()
@@ -203,6 +206,7 @@ export default function AdminTablesPage() {
         if (r._status === 'confirmed') return true
         if (r._status === 'occupied') return true
         if (r._status === 'completed') return true
+        if (r._status === 'expired') return true
         if (r._status === 'hold') return r._holdExpiresAt && r._holdExpiresAt > now
         return false
       })
@@ -362,8 +366,10 @@ export default function AdminTablesPage() {
       const r = reservationsForSelectedTableToday.find((x) => x.id === reservationId)
       if (!r) throw new Error('Reservation not found')
       const now = new Date()
-      if (!r._start || now < r._start) {
-        throw new Error('Chỉ cho phép check-in từ thời gian bắt đầu')
+      // Allow check-in 10 minutes early
+      const tenMinutesBeforeStart = new Date((r._start?.getTime?.() || 0) - 10 * 60 * 1000)
+      if (!r._start || now < tenMinutesBeforeStart) {
+        throw new Error('Check-in available 10 minutes before start time')
       }
       if (r._end && now > r._end) {
         throw new Error('Đơn đã quá giờ kết thúc')
@@ -417,23 +423,7 @@ export default function AdminTablesPage() {
 
     setError('')
     try {
-      const sorted = rows
-        .slice()
-        .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
-
-      const perFloor = Math.max(1, Math.ceil(sorted.length / 3))
-      const batch = writeBatch(db)
-
-      for (let i = 0; i < sorted.length; i += 1) {
-        const r = sorted[i]
-        const floor = Math.min(3, Math.max(1, Math.floor(i / perFloor) + 1))
-        batch.update(doc(db, 'tables', r.id), {
-          floor,
-          updatedAt: serverTimestamp(),
-        })
-      }
-
-      await batch.commit()
+      await assignFloorsService({ db, tables: rows })
     } catch (e) {
       setError(e?.message || 'Failed to assign floors')
     }
@@ -458,42 +448,9 @@ export default function AdminTablesPage() {
     const draft = editDialog.draft
     if (!id || !draft) return
 
-    const number = toInt(draft.number, NaN)
-    const seats = toInt(draft.seats, NaN)
-    const floor = toInt(draft.floor, NaN)
-
-    if (!Number.isFinite(number) || number <= 0) {
-      setError('Table number must be a positive integer')
-      return
-    }
-    if (!Number.isFinite(seats) || seats <= 0) {
-      setError('Seats must be a positive integer')
-      return
-    }
-
-    if (!SEATS_OPTIONS.includes(seats)) {
-      setError('Seats must be one of: 2, 4, 6, 8')
-      return
-    }
-
-    const exists = rows.some((r) => r.id !== id && Number(r.number) === number)
-    if (exists) {
-      setError('Another table already has this number')
-      return
-    }
-
     setSavingId(id)
     try {
-      const payload = {
-        number,
-        seats,
-        floor,
-        updatedAt: serverTimestamp(),
-      }
-      if (draft.imageUrl && typeof draft.imageUrl === 'string' && draft.imageUrl.length > 0) {
-        payload.imageUrl = draft.imageUrl
-      }
-      await updateDoc(doc(db, 'tables', id), payload)
+      await saveTableEdit({ db, tableId: id, draft, existingTables: rows })
       setEditDialog({ open: false, tableId: '', draft: null })
     } catch (e) {
       setError(e?.message || 'Failed to update table')
@@ -509,7 +466,7 @@ export default function AdminTablesPage() {
     setError('')
     setDeletingId(id)
     try {
-      await deleteDoc(doc(db, 'tables', id))
+      await removeTableService({ db, tableId: id })
     } catch (e) {
       setError(e?.message || 'Failed to delete table')
     } finally {
@@ -652,6 +609,8 @@ export default function AdminTablesPage() {
                           <button type="button" className="btn" onClick={checkOutCurrent}>
                             Check out
                           </button>
+                        ) : reservationsForSelectedTableToday.length > 0 ? (
+                          <span className="badge badge--neutral">Has reservation today</span>
                         ) : (
                           <button type="button" className="btn" onClick={manualCheckIn} disabled={isAfterClose} title={isAfterClose ? 'Store closed after 23:00' : undefined}>
                             Check in (Walk-in)

@@ -6,6 +6,12 @@ function minutesFromMidnight(d) {
   return d.getHours() * 60 + d.getMinutes()
 }
 
+function toDate(v) {
+  if (!v) return null
+  if (typeof v?.toDate === 'function') return v.toDate()
+  try { return new Date(v) } catch { return null }
+}
+
 export default function TableTimeline({ tables, reservations, isoDate, onChangeIsoDate, onOpenReservation, occupiedTableIds, nowOffsetMinutes = 0 }) {
   const timelineReservationsForDay = useMemo(() => {
     return reservations.filter((r) => {
@@ -30,6 +36,30 @@ export default function TableTimeline({ tables, reservations, isoDate, onChangeI
     }
     return map
   }, [timelineReservationsForDay])
+
+  const walkInBarsByTableId = useMemo(() => {
+    const map = new Map()
+    for (const t of tables) {
+      const since = toDate(t.manualOccupiedSince)
+      if (!since) continue
+      const iso = formatISODate(since)
+      if (iso !== isoDate) continue
+      // If manualOccupiedUntil exists, use it; otherwise, extend to end of day
+      const until = toDate(t.manualOccupiedUntil)
+      const until2359 = new Date(since.getFullYear(), since.getMonth(), since.getDate(), 23, 59, 59)
+      // If until exists and is after since, use it; otherwise use end of day
+      const endTime = until && until.getTime() > since.getTime() ? until : until2359
+      const walkInObj = {
+        id: `walk-in-${t.id}`,
+        tableId: t.id,
+        _status: 'manual',
+        startTimeDate: since,
+        endTimeDate: endTime,
+      }
+      map.set(t.id, [walkInObj])
+    }
+    return map
+  }, [tables, isoDate, nowOffsetMinutes])
 
   const slotMinutes = TIMELINE_CONFIG.stepMinutes
   const openMinutes = TIMELINE_CONFIG.openMinutes
@@ -74,6 +104,7 @@ export default function TableTimeline({ tables, reservations, isoDate, onChangeI
           <div className="ganttLegend__item"><span className="ganttLegend__swatch swatch--hold" />Pending (Hold)</div>
           <div className="ganttLegend__item"><span className="ganttLegend__swatch swatch--occupied" />Occupied</div>
           <div className="ganttLegend__item"><span className="ganttLegend__swatch swatch--completed" />Completed</div>
+          <div className="ganttLegend__item"><span className="ganttLegend__swatch swatch--expired" />Expired</div>
           <div className="ganttLegend__item"><span className="ganttLegend__swatch swatch--manual" />Walk-in</div>
         </div>
       </div>
@@ -93,6 +124,8 @@ export default function TableTimeline({ tables, reservations, isoDate, onChangeI
         <div className="ganttBody" style={{ position: 'relative' }}>
           {tables.map((t) => {
             const bars = timelineBarsByTableId.get(t.id) || []
+            const walkInBars = walkInBarsByTableId.get(t.id) || []
+            const allBars = [...bars, ...walkInBars]
             const isOccupied = occupiedTableIds instanceof Set ? occupiedTableIds.has(t.id) : false
             const now = new Date(Date.now() + (Number(nowOffsetMinutes) || 0) * 60 * 1000)
 
@@ -123,7 +156,7 @@ export default function TableTimeline({ tables, reservations, isoDate, onChangeI
                       aria-hidden="true"
                     />
                   ) : null}
-                  {bars.map((r) => {
+                  {allBars.map((r) => {
                     const startM = minutesFromMidnight(r.startTimeDate)
                     const endM = minutesFromMidnight(r.endTimeDate)
                     const startIdx = toSlotIndex(startM)
@@ -140,9 +173,11 @@ export default function TableTimeline({ tables, reservations, isoDate, onChangeI
                         ? 'occupied'
                         : baseStatus === 'completed'
                           ? 'completed'
-                          : baseStatus === 'manual'
-                            ? 'manual'
-                            : 'confirmed'
+                          : baseStatus === 'expired'
+                            ? 'expired'
+                            : baseStatus === 'manual'
+                              ? 'manual'
+                              : 'confirmed'
                     return (
                       <button
                         key={r.id}

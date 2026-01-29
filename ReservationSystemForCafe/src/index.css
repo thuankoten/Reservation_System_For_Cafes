@@ -25,7 +25,7 @@ body {
   min-height: 100vh;
 }
 
-.appShell__main {
+.appShell__main { 
   min-height: 100vh;
   padding: 0;
 }
@@ -1155,6 +1155,11 @@ body {
   border-color: rgba(234, 88, 12, 0.35);
 }
 
+.ganttBar--expired {
+  background: rgba(255, 255, 255, 0.4); /* white */
+  border-color: rgba(107, 114, 128, 0.35);
+}
+
  .ganttLegend {
    display: inline-flex;
    align-items: center;
@@ -1182,6 +1187,7 @@ body {
 .swatch--occupied { background: rgba(139, 92, 246, 0.22); border-color: rgba(139, 92, 246, 0.35); }
 .swatch--completed { background: rgba(107, 114, 128, 0.22); border-color: rgba(107, 114, 128, 0.35); }
 .swatch--manual { background: rgba(234, 88, 12, 0.22); border-color: rgba(234, 88, 12, 0.35); }
+.swatch--expired { background: rgba(255, 255, 255, 0.4); border-color: rgba(107, 114, 128, 0.35); }
 
  .contextMenu {
    position: fixed;
