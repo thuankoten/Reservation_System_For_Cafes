@@ -42,7 +42,6 @@ export default function App() {
             <Route path="tables" element={<FloorPage />} />
             <Route path="reservations" element={<ReservationPage />} />
             <Route path="instructions" element={<InstructionsPage />} />
-            {/* Chat/Report removed */}
             <Route index element={<Navigate to="overview" replace />} />
           </Route>
 

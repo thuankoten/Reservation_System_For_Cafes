@@ -26,7 +26,6 @@ function toDate(v) {
   }
 }
 
-// Pricing removed from customer reservation flow.
 
 function getDefaultStartMinutes({ isoDate, durationMinutes }) {
   const dur = Number(durationMinutes)
@@ -271,7 +270,6 @@ export default function ReservationPage() {
     setEndMinutes(computeDefaultEndMinutes({ startMinutes: nextStart, durationMinutes }))
   }
 
-  // Pricing removed
 
   const activeHoldReservation = useMemo(() => {
     const now = new Date()
@@ -284,7 +282,6 @@ export default function ReservationPage() {
     return null
   }, [myReservations])
 
-  // Hold countdown removed
 
   const myReservationRows = useMemo(() => {
     return buildMyReservationRows({ myReservations })

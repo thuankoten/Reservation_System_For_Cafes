@@ -36,7 +36,7 @@ export class FirestoreReservationRepository {
   }
 
   subscribeById({ reservationId, onNext, onError }) {
-    if (!reservationId) throw new Error('Missing reservationId')
+    if (!reservationId) throw new Error('No reservation found.')
     const ref = doc(this.db, 'reservations', reservationId)
     return onSnapshot(
       ref,
@@ -65,7 +65,7 @@ export class FirestoreReservationRepository {
   }
 
   async setStatus({ reservationId, status, extraUpdates }) {
-    if (!reservationId) throw new Error('Missing reservationId')
+    if (!reservationId) throw new Error('No reservation found.')
     await updateDoc(doc(this.db, 'reservations', reservationId), {
       status,
       ...(extraUpdates || {}),
@@ -74,7 +74,7 @@ export class FirestoreReservationRepository {
   }
 
   async cancelReservation({ reservationId, tableId, slotKeys }) {
-    if (!reservationId) throw new Error('Missing reservationId')
+    if (!reservationId) throw new Error('No reservation found.')
 
     const batch = writeBatch(this.db)
 
