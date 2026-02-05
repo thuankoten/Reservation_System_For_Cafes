@@ -1,20 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { collection, doc, onSnapshot, orderBy, query, limit, getDocFromServer, setDoc, serverTimestamp } from 'firebase/firestore'
-import { 
-  checkInReservationAction as adminCheckIn, 
-  checkOutTableAction as adminCheckOut, 
-  expireOverdueAction as adminExpireOverdue, 
-  reconcileTableStatusesAction as adminReconcile, 
-  manualCheckInAction as adminOccupyManual, 
-  manualCheckOutAction as adminReleaseManual 
-} from '../../../shared/services/admin/reservations'
-import { saveTableEdit, removeTable as removeTableService, assignFloors as assignFloorsService } from '../../../shared/services/admin/tables'
-import { db, storage } from '../../../shared/firebase'
+import { storage } from '../../../shared/firebase'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { formatISODate, TIMELINE_CONFIG } from '../../../shared/utils/timeline'
 import TableMap from '../../../shared/components/tables/TableMap'
 import TableTimeline from '../../../shared/components/tables/TableTimeline'
+import { useTablesQuery } from '../../../modules/tables/application/queries/useTablesQuery'
+import { useReservationsQuery } from '../../../modules/reservations/application/queries/useReservationsQuery'
+import { useServices } from '../../../app/ServiceContext'
 
 const STATUS_OPTIONS = [
   { value: 'available', label: 'Free (available)' },
@@ -27,8 +20,9 @@ const FLOOR_OPTIONS = [1, 2, 3]
 
 export default function AdminTablesPage() {
   const navigate = useNavigate()
-  const [rows, setRows] = useState([])
-  const [loading, setLoading] = useState(true)
+  const { useCases } = useServices()
+  const { rows, loading, error: tablesError } = useTablesQuery()
+  const { rows: reservations, error: reservationsError } = useReservationsQuery()
   const [error, setError] = useState('')
 
   const [activeView, setActiveView] = useState('map')
@@ -44,40 +38,18 @@ export default function AdminTablesPage() {
   const [savingId, setSavingId] = useState('')
   const [deletingId, setDeletingId] = useState('')
 
-  const [reservations, setReservations] = useState([])
-  const [reservationsError, setReservationsError] = useState('')
-
   const [contextMenu, setContextMenu] = useState({ open: false, x: 0, y: 0, tableId: '' })
   const [editDialog, setEditDialog] = useState({ open: false, tableId: '', draft: null })
-
-  useEffect(() => {
-    setError('')
-    setLoading(true)
-
-    const q = query(collection(db, 'tables'), orderBy('number', 'asc'))
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        setRows(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
-        setLoading(false)
-      },
-      (e) => {
-        setError(e?.message || 'Failed to load tables')
-        setLoading(false)
-      }
-    )
-
-    return () => unsub()
-  }, [])
 
   // Auto-expire overdue confirmed reservations periodically (every 5 minutes) and on mount
   useEffect(() => {
     let timerId
     async function runExpire() {
       try {
-        await adminExpireOverdue({ db, reservations })
-      } catch (e) {
+        await useCases.expireOverdueReservations.execute({ reservations })
+      } catch {
         /* swallow errors to avoid noisy UI; manual action still available */
+        void 0
       }
     }
     runExpire()
@@ -85,60 +57,33 @@ export default function AdminTablesPage() {
     return () => {
       if (timerId) clearInterval(timerId)
     }
-  }, [reservations])
+  }, [reservations, useCases.expireOverdueReservations])
 
   // Calibrate client clock against Firestore server time once on mount
   useEffect(() => {
     let cancelled = false
     async function calibrate() {
       try {
-        const ref = doc(db, 'meta', 'timePing')
-        await setDoc(ref, { pingedAt: serverTimestamp() }, { merge: true })
-        // Force fetch from server to avoid stale cached timestamp
-        const snap = await getDocFromServer(ref)
-        const serverNow = snap.data()?.pingedAt?.toDate?.()
-        if (serverNow instanceof Date && !cancelled) {
-          const offsetMs = serverNow.getTime() - Date.now()
-          const offsetMin = Math.round(offsetMs / 60000)
-          // Ignore suspicious large offsets (>5 minutes) to avoid DST/timezone artifacts
-          const safeOffset = Number.isFinite(offsetMin) ? offsetMin : 0
-          const bounded = Math.abs(safeOffset) <= 5 ? safeOffset : 0
-          if (Math.abs(safeOffset) > 5) {
-            try { console.warn('[Time Calibrate] Large offset ignored:', safeOffset, 'min') } catch {}
-          }
-          setNowOffsetMinutes(bounded)
-        }
-      } catch (e) {
+        const bounded = await useCases.pingServerOffsetMinutes.execute()
+        if (!cancelled) setNowOffsetMinutes(Number(bounded) || 0)
+      } catch {
         // If calibration fails, fall back to device time
         setNowOffsetMinutes(0)
       }
     }
     calibrate()
     return () => { cancelled = true }
-  }, [])
-
-  useEffect(() => {
-    const q = query(collection(db, 'reservations'), orderBy('createdAt', 'desc'), limit(200))
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        setReservationsError('')
-        setReservations(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
-      },
-      (e) => setReservationsError(e?.message || 'Failed to load reservations')
-    )
-    return () => unsub()
-  }, [])
+  }, [useCases.pingServerOffsetMinutes])
 
   // Reconcile table statuses on initial data load and whenever tables/reservations change
   useEffect(() => {
     if (!rows || rows.length === 0) return
     // Debounce to avoid rapid consecutive writes
     const timer = setTimeout(() => {
-      adminReconcile({ db, tables: rows, reservations }).catch(() => {})
+      useCases.reconcileTableStatuses.execute({ tables: rows, reservations }).catch(() => null)
     }, 800)
     return () => clearTimeout(timer)
-  }, [rows, reservations])
+  }, [rows, reservations, useCases.reconcileTableStatuses])
 
   useEffect(() => {
     if (!contextMenu.open) return
@@ -212,26 +157,6 @@ export default function AdminTablesPage() {
       })
   }, [reservations])
 
-  const activeConfirmedReservations = useMemo(() => {
-    return activeReservations.filter((r) => r._status === 'confirmed')
-  }, [activeReservations])
-
-  const reservationByTableId = useMemo(() => {
-    const map = new Map()
-    const now = new Date()
-    for (const r of activeConfirmedReservations) {
-      if (!r.tableId) continue
-      const s = r.startTimeDate
-      const e = r.endTimeDate
-      if (!(s instanceof Date) || !(e instanceof Date)) continue
-      if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) continue
-      if (s <= now && e > now) {
-        if (!map.has(r.tableId)) map.set(r.tableId, r)
-      }
-    }
-    return map
-  }, [activeConfirmedReservations])
-
   const floorIdForTable = (t) => {
     const explicit = Number(t?.floor)
     if (explicit === 1 || explicit === 2 || explicit === 3) return explicit
@@ -245,7 +170,7 @@ export default function AdminTablesPage() {
       if (activeStatus === 'all') return true
       return effectiveStatus === activeStatus
     })
-  }, [activeStatus, reservationByTableId, rows])
+  }, [activeStatus, rows])
 
   const mapTables = useMemo(() => {
     return filteredTables
@@ -265,7 +190,7 @@ export default function AdminTablesPage() {
       })
       .slice()
       .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
-  }, [activeFloor, activeStatus, reservationByTableId, rows])
+  }, [activeFloor, activeStatus, rows])
 
   const timelineReservations = useMemo(() => {
     return activeReservations.filter((r) => {
@@ -374,7 +299,7 @@ export default function AdminTablesPage() {
       if (r._end && now > r._end) {
         throw new Error('Đơn đã quá giờ kết thúc')
       }
-      await adminCheckIn({ db, reservationId, tableId: selectedRow.id })
+      await useCases.checkInReservation.execute({ reservation: { id: reservationId, tableId: selectedRow.id } })
     } catch (e) {
       setError(e?.message || 'Failed to check in')
     }
@@ -388,9 +313,9 @@ export default function AdminTablesPage() {
         (r) => r._status === 'confirmed' && (!r.checkedInAt || r.checkedOutAt) && r._start && r._start > now
       )
       if (checkedInReservation?.id) {
-        await adminCheckOut({ db, tableId: selectedRow.id, reservationId: checkedInReservation.id, keepReserved: hasUpcomingConfirmed })
+        await useCases.checkOutReservation.execute({ reservation: { id: checkedInReservation.id, tableId: selectedRow.id }, keepReserved: hasUpcomingConfirmed })
       } else {
-        await adminReleaseManual({ db, tableId: selectedRow.id, keepReserved: hasUpcomingConfirmed })
+        await useCases.manualCheckOut.execute({ tableId: selectedRow.id, keepReserved: hasUpcomingConfirmed })
       }
     } catch (e) {
       setError(e?.message || 'Failed to check out')
@@ -403,17 +328,9 @@ export default function AdminTablesPage() {
         setError('Store closed (after 23:00)')
         return
       }
-      await adminOccupyManual({ db, tableId: selectedRow.id })
+      await useCases.manualCheckIn.execute({ tableId: selectedRow.id })
     } catch (e) {
       setError(e?.message || 'Failed to check in walk-in')
-    }
-  }
-
-  async function expireOverdueConfirmed() {
-    try {
-      await adminExpireOverdue({ db, reservations })
-    } catch (e) {
-      setError(e?.message || 'Failed to expire overdue reservations')
     }
   }
 
@@ -423,7 +340,7 @@ export default function AdminTablesPage() {
 
     setError('')
     try {
-      await assignFloorsService({ db, tables: rows })
+      await useCases.assignFloors.execute({ tables: rows })
     } catch (e) {
       setError(e?.message || 'Failed to assign floors')
     }
@@ -450,7 +367,7 @@ export default function AdminTablesPage() {
 
     setSavingId(id)
     try {
-      await saveTableEdit({ db, tableId: id, draft, existingTables: rows })
+      await useCases.saveTableEdit.execute({ tableId: id, draft, existingTables: rows })
       setEditDialog({ open: false, tableId: '', draft: null })
     } catch (e) {
       setError(e?.message || 'Failed to update table')
@@ -466,7 +383,7 @@ export default function AdminTablesPage() {
     setError('')
     setDeletingId(id)
     try {
-      await removeTableService({ db, tableId: id })
+      await useCases.deleteTable.execute({ tableId: id })
     } catch (e) {
       setError(e?.message || 'Failed to delete table')
     } finally {
@@ -492,7 +409,7 @@ export default function AdminTablesPage() {
           </div>
         </div>
 
-        {error ? <div className="error" style={{ marginTop: 12 }}>{error}</div> : null}
+        {error || tablesError ? <div className="error" style={{ marginTop: 12 }}>{error || tablesError}</div> : null}
         {reservationsError ? <div className="error" style={{ marginTop: 12 }}>{reservationsError}</div> : null}
       </div>
 

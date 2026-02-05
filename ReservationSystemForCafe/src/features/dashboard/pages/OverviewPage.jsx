@@ -1,10 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { collection, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore'
-import { updateProfile } from 'firebase/auth'
-import { db } from '../../../shared/firebase'
-import { auth } from '../../../shared/firebase'
 import { useAuth } from '../../auth/useAuth'
+import { useMyReservationsQuery } from '../../../modules/reservations/application/queries/useMyReservationsQuery'
+import { useServices } from '../../../app/ServiceContext'
 import styles from './OverviewPage.module.css'
 
 function Badge({ tone = 'neutral', children }) {
@@ -33,7 +31,8 @@ function formatDateTime(d) {
 export default function OverviewPage() {
   const navigate = useNavigate()
   const { user, refreshUser } = useAuth()
-  const [history, setHistory] = useState([])
+  const { useCases } = useServices()
+  const { rows: myReservations } = useMyReservationsQuery({ userId: user?.uid })
   const [namePromptOpen, setNamePromptOpen] = useState(false)
   const [pendingName, setPendingName] = useState('')
   const [savingName, setSavingName] = useState(false)
@@ -46,20 +45,15 @@ export default function OverviewPage() {
     return "Have a warm evening!"
   }
 
-  useEffect(() => {
-    if (!user?.uid) return
-
-    const q = query(
-      collection(db, 'reservations'),
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc'),
-      limit(5)
-    )
-    const unsub = onSnapshot(q, (snap) => {
-      setHistory(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+  const history = useMemo(() => {
+    const list = (myReservations || []).slice()
+    list.sort((a, b) => {
+      const ta = toDate(a.createdAt)?.getTime?.() || 0
+      const tb = toDate(b.createdAt)?.getTime?.() || 0
+      return tb - ta
     })
-    return () => unsub()
-  }, [user?.uid])
+    return list.slice(0, 5)
+  }, [myReservations])
 
   useEffect(() => {
     const isAnon = Boolean(user?.isAnonymous)
@@ -74,10 +68,9 @@ export default function OverviewPage() {
   async function saveAnonymousName() {
     const name = String(pendingName || '').trim()
     if (!name) return
-    if (!auth.currentUser) return
     setSavingName(true)
     try {
-      await updateProfile(auth.currentUser, { displayName: name })
+      await useCases.ensureBookingUser.execute({ displayName: name })
       await refreshUser?.()
       setNamePromptOpen(false)
     } finally {

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
-import { db } from '../../../shared/firebase'
-import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore'
+import { useMemo } from 'react'
+import { useTablesQuery } from '../../../modules/tables/application/queries/useTablesQuery'
+import { useReservationsQuery } from '../../../modules/reservations/application/queries/useReservationsQuery'
 
 function toDate(v) {
   if (!v) return null
@@ -9,23 +9,8 @@ function toDate(v) {
 }
 
 export default function AdminDashboard() {
-  const [tables, setTables] = useState([])
-  const [reservations, setReservations] = useState([])
-  
-
-  useEffect(() => {
-    const unsubTables = onSnapshot(collection(db, 'tables'), (snap) => {
-      setTables(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
-    })
-
-    const qRes = query(collection(db, 'reservations'), orderBy('createdAt', 'desc'), limit(50))
-    const unsubRes = onSnapshot(qRes, (snap) => {
-      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-      setReservations(rows)
-    })
-
-    return () => { unsubTables(); unsubRes() }
-  }, [])
+  const { rows: tables } = useTablesQuery()
+  const { rows: reservations } = useReservationsQuery({ orderByField: 'createdAt', orderByDirection: 'desc', limitCount: 50 })
 
   const stats = useMemo(() => {
     const totalTables = tables.length

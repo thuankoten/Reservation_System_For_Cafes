@@ -18,12 +18,8 @@ export default function ReservationRow({
   const start = toDate(r.startTime)
   const end = toDate(r.endTime)
   const createdAt = toDate(r.createdAt)
-  const checkedInAt = toDate(r.checkedInAt)
-  const checkedOutAt = toDate(r.checkedOutAt)
-  const now = new Date()
   const status = String(r.status || '').toLowerCase()
   const isDiningNow = status === 'occupied'
-  const isCompleted = status === 'completed'
   const canCancel =
     r.status === 'confirmed' &&
     start &&

@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { formatISODate, minutesToTimeLabel, TIMELINE_CONFIG } from '../../utils/timeline'
 
 function minutesFromMidnight(d) {
@@ -13,6 +13,13 @@ function toDate(v) {
 }
 
 export default function TableTimeline({ tables, reservations, isoDate, onChangeIsoDate, onOpenReservation, occupiedTableIds, nowOffsetMinutes = 0 }) {
+  const [nowMs, setNowMs] = useState(() => Date.now())
+
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 60 * 1000)
+    return () => clearInterval(id)
+  }, [])
+
   const timelineReservationsForDay = useMemo(() => {
     return reservations.filter((r) => {
       if (!r?.startTimeDate) return false
@@ -59,7 +66,7 @@ export default function TableTimeline({ tables, reservations, isoDate, onChangeI
       map.set(t.id, [walkInObj])
     }
     return map
-  }, [tables, isoDate, nowOffsetMinutes])
+  }, [tables, isoDate])
 
   const slotMinutes = TIMELINE_CONFIG.stepMinutes
   const openMinutes = TIMELINE_CONFIG.openMinutes
@@ -127,7 +134,7 @@ export default function TableTimeline({ tables, reservations, isoDate, onChangeI
             const walkInBars = walkInBarsByTableId.get(t.id) || []
             const allBars = [...bars, ...walkInBars]
             const isOccupied = occupiedTableIds instanceof Set ? occupiedTableIds.has(t.id) : false
-            const now = new Date(Date.now() + (Number(nowOffsetMinutes) || 0) * 60 * 1000)
+            const now = nowMs ? new Date(nowMs + (Number(nowOffsetMinutes) || 0) * 60 * 1000) : null
 
             return (
               <div key={t.id} className="ganttRow">
@@ -136,6 +143,7 @@ export default function TableTimeline({ tables, reservations, isoDate, onChangeI
                   {(() => {
                     const todayIso = formatISODate(new Date())
                     if (isoDate !== todayIso) return null
+                    if (!now) return null
                     const nowM = minutesFromMidnight(now)
                     if (!Number.isFinite(nowM)) return null
                     const clampedM = Math.max(openMinutes, Math.min(closeMinutes, nowM))

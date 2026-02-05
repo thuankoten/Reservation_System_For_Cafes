@@ -2,11 +2,12 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { signInWithEmailAndPassword, signOut, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
 import { auth } from '../../../shared/firebase'
-import { getUserById } from '../../../shared/services/users'
+import { useServices } from '../../../app/ServiceContext'
 import cafeLogo from '../../../assets/images/cafe-logo.png'
 
 export default function AdminLogin() {
   const navigate = useNavigate()
+  const { useCases } = useServices()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -19,7 +20,7 @@ export default function AdminLogin() {
     try {
       const cred = await signInWithEmailAndPassword(auth, email, password)
       const uid = cred.user.uid
-      const doc = await getUserById(uid)
+      const doc = await useCases.getUserById.execute({ userId: uid })
       const role = doc?.role
       if (role === 'admin' || role === 'system-admin') {
         navigate('/admin/dashboard', { replace: true })
@@ -41,7 +42,7 @@ export default function AdminLogin() {
     try {
       const cred = await signInWithPopup(auth, new GoogleAuthProvider())
       const uid = cred.user.uid
-      const doc = await getUserById(uid)
+      const doc = await useCases.getUserById.execute({ userId: uid })
       const role = doc?.role
       if (role === 'admin' || role === 'system-admin') {
         navigate('/admin/dashboard', { replace: true })

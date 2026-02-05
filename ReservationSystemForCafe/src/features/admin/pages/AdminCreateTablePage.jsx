@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { addDoc, collection, query, orderBy, onSnapshot, serverTimestamp } from 'firebase/firestore'
-import { db } from '../../../shared/firebase'
+import { useTablesQuery } from '../../../modules/tables/application/queries/useTablesQuery'
+import { useServices } from '../../../app/ServiceContext'
 
 const STATUS_OPTIONS = [
   { value: 'available', label: 'Free (available)' },
@@ -26,8 +26,8 @@ function toInt(value, fallback) {
 export default function AdminCreateTablePage() {
   const navigate = useNavigate()
 
-  const [rows, setRows] = useState([])
-  const [loadingTables, setLoadingTables] = useState(true)
+  const { useCases } = useServices()
+  const { rows, loading: loadingTables, error: tablesError } = useTablesQuery()
 
   const [number, setNumber] = useState('')
   const [seats, setSeats] = useState('2')
@@ -40,20 +40,8 @@ export default function AdminCreateTablePage() {
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    const q = query(collection(db, 'tables'), orderBy('number', 'asc'))
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        setRows(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
-        setLoadingTables(false)
-      },
-      () => {
-        setRows([])
-        setLoadingTables(false)
-      }
-    )
-    return () => unsub()
-  }, [])
+    if (tablesError) setError(tablesError)
+  }, [tablesError])
 
   const numberSet = useMemo(() => new Set(rows.map((r) => Number(r.number))), [rows])
 
@@ -111,14 +99,16 @@ export default function AdminCreateTablePage() {
 
     setSubmitting(true)
     try {
-      await addDoc(collection(db, 'tables'), {
-        number: n,
-        seats: s,
-        floor: f,
-        status,
-        placement,
-        imageUrl: normalizedImageUrl,
-        updatedAt: serverTimestamp(),
+      await useCases.createTable.execute({
+        draft: {
+          number: n,
+          seats: s,
+          floor: f,
+          status,
+          placement,
+          imageUrl: normalizedImageUrl,
+        },
+        existingTables: rows,
       })
 
       navigate('/admin/dashboard/tables', { replace: true })

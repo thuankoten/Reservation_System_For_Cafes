@@ -1,19 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
-import {
-  collection,
-  limit,
-  onSnapshot,
-  orderBy,
-  query,
-  where,
-} from 'firebase/firestore'
-import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
-import { signInAnonymously, signOut } from 'firebase/auth'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { showErrorAlert } from '../../../shared/utils/errorAlert'
-import { auth, db } from '../../../shared/firebase'
 import { useAuth } from '../../auth/useAuth'
-import { cancelReservation, createHoldReservation } from '../../../shared/services/customer/reservations'
-import { getReservedTableIdsForRange } from '../../../shared/services/customer/availability'
+import { getReservedTableIdsForRange } from '../../../modules/reservations/domain/policies/availabilityPolicy'
+import { useTablesQuery } from '../../../modules/tables/application/queries/useTablesQuery'
+import { useReservationsQuery } from '../../../modules/reservations/application/queries/useReservationsQuery'
+import { useMyReservationsQuery } from '../../../modules/reservations/application/queries/useMyReservationsQuery'
+import { buildMyReservationRows, groupMyReservations } from '../../../modules/reservations/application/presenters/customerMyReservationsPresenter'
+import { useServices } from '../../../app/ServiceContext'
 import {
   formatISODate,
   listStartMinutesForDuration,
@@ -70,15 +64,15 @@ function computeDefaultEndMinutes({ startMinutes, durationMinutes }) {
 
 export default function ReservationPage() {
   const { user } = useAuth()
+  const { useCases } = useServices()
   const navigate = useNavigate()
-  const location = useLocation()
   const DRAFT_KEY = 'reservationDraft'
   const [searchParams] = useSearchParams()
   const [initialTableId] = useState(() => searchParams.get('tableId') || '')
   const [autoSelectTable, setAutoSelectTable] = useState(false)
-  const [tables, setTables] = useState([])
-  const [reservations, setReservations] = useState([])
-  const [myReservations, setMyReservations] = useState([])
+  const { rows: tables, error: tablesError } = useTablesQuery()
+  const { rows: reservations, error: reservationsError } = useReservationsQuery()
+  const { rows: myReservations, error: myReservationsError } = useMyReservationsQuery({ userId: user?.uid })
   const [expandedIds, setExpandedIds] = useState(() => new Set())
 
   const [selectedTableId, setSelectedTableId] = useState('')
@@ -134,80 +128,49 @@ export default function ReservationPage() {
         if (typeof d.selectedTableId === 'string') setSelectedTableId(d.selectedTableId)
       }
       sessionStorage.removeItem(DRAFT_KEY)
-    } catch {}
+    } catch {
+      void 0
+    }
   }, [])
 
   useEffect(() => {
-    const qTables = query(collection(db, 'tables'), orderBy('number', 'asc'))
-    const unsub = onSnapshot(
-      qTables,
-      (snap) => {
-        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-        setTables(rows)
-
-        setSelectedTableId((prev) => {
-          // Keep placeholder by default; honor existing valid selection or initialTableId
-          if (prev && rows.some((t) => t.id === prev)) return prev
-          if (initialTableId && rows.some((t) => t.id === initialTableId)) return initialTableId
-          return ''
-        })
-      },
-      (e) => setError(e?.message || 'Failed to load tables')
-    )
-
-    return () => unsub()
-  }, [initialTableId, autoSelectTable])
+    if (tablesError) setError(tablesError)
+  }, [tablesError])
 
   useEffect(() => {
-    const q = query(collection(db, 'reservations'), orderBy('createdAt', 'desc'), limit(100))
-    const unsub = onSnapshot(
-      q,
-      (snap) => setReservations(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-      () => setReservations([])
-    )
-    return () => unsub()
-  }, [])
-
+    if (reservationsError) setError(reservationsError)
+  }, [reservationsError])
 
   useEffect(() => {
-    if (!user?.uid) return
+    if (myReservationsError) setError(myReservationsError)
+  }, [myReservationsError])
 
-    const qMine = query(
-      collection(db, 'reservations'),
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc'),
-      limit(50)
-    )
+  useEffect(() => {
+    if (!tables || tables.length === 0) return
+    setSelectedTableId((prev) => {
+      if (prev && tables.some((t) => t.id === prev)) return prev
+      if (initialTableId && tables.some((t) => t.id === initialTableId)) return initialTableId
+      if (autoSelectTable && tables.length > 0) return tables[0]?.id || ''
+      return ''
+    })
+  }, [autoSelectTable, initialTableId, tables])
 
-    const unsub = onSnapshot(
-      qMine,
-      (snap) => {
-        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-        setMyReservations(rows)
-
-        const now = new Date()
-        for (const r of rows) {
-          const status = String(r.status || '').toLowerCase()
-          if (status !== 'hold') continue
-          const holdDeadline = toDate(r.holdExpiresAt)
-          if (holdDeadline && holdDeadline <= now) {
-            cancelReservation({ db, reservationId: r.id, tableId: r.tableId, slotKeys: r.slotKeys }).catch(() => {})
-          }
-        }
-      },
-      (e) => setError(e?.message || 'Failed to load reservations')
-    )
-
-    return () => unsub()
-  }, [user?.uid])
-
-  // Khi sign-out: xoá lịch sử hiển thị để khách không thấy My reservations
   useEffect(() => {
     if (!user?.uid) {
-      setMyReservations([])
       setExpandedIds(new Set())
+      return
     }
-  }, [user?.uid])
+
+    const now = new Date()
+    for (const r of myReservations) {
+      const status = String(r.status || '').toLowerCase()
+      if (status !== 'hold') continue
+      const holdDeadline = toDate(r.holdExpiresAt)
+      if (holdDeadline && holdDeadline <= now) {
+        useCases.cancelHoldReservation.execute({ reservation: r }).catch(() => null)
+      }
+    }
+  }, [myReservations, user?.uid, useCases.cancelHoldReservation])
 
   const customerNameValue = customerNameTouched ? customerName : (user?.displayName || customerName)
   const customerEmailValue = user?.email ? user.email : (customerEmailTouched ? customerEmail : customerEmail)
@@ -278,14 +241,11 @@ export default function ReservationPage() {
     const step = TIMELINE_CONFIG.stepMinutes
     const start = Number(startMinutes)
     if (!Number.isFinite(start)) return []
-
-    const today = formatISODate(new Date())
-    const isToday = isoDate === today
     const latestEnd = Math.min(TIMELINE_CONFIG.closeMinutes, start + TIMELINE_CONFIG.maxDurationMinutes)
     const out = []
     for (let m = start + step; m <= latestEnd; m += step) out.push(m)
     return out
-  }, [startMinutes, isoDate])
+  }, [startMinutes])
 
   useEffect(() => {
     setEndMinutes((prev) => {
@@ -327,67 +287,19 @@ export default function ReservationPage() {
   // Hold countdown removed
 
   const myReservationRows = useMemo(() => {
-    const now = new Date()
-    return myReservations.map((r) => {
-      const status = String(r.status || '').toLowerCase()
-      const expiresAt = toDate(r.holdExpiresAt)
-      const startTime = toDate(r.startTime)
-      const endTime = toDate(r.endTime)
-      const isHoldActive = status === 'hold' && expiresAt && expiresAt > now
-      const statusLabel = status === 'confirmed' ? 'Confirmed' : status === 'hold' ? (isHoldActive ? 'Pending approval' : 'Expired') : status || '—'
-      return { ...r, _status: status, _expiresAt: expiresAt, _startTime: startTime, _endTime: endTime, _isHoldActive: isHoldActive, _statusLabel: statusLabel }
-    })
+    return buildMyReservationRows({ myReservations })
   }, [myReservations])
 
   // Group reservations into sections per request
   const groupedMyReservations = useMemo(() => {
-    const rows = myReservationRows.filter((r) => r._startTime instanceof Date && !Number.isNaN(r._startTime.getTime()))
-
-    const todayIso = formatISODate(new Date())
-    const d = new Date()
-    const yesterday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1)
-    const yesterdayIso = formatISODate(yesterday)
-
-    const statusPriority = (s) => {
-      const k = String(s || '').toLowerCase()
-      if (k === 'confirmed') return 0
-      if (k === 'occupied') return 1
-      if (k === 'completed') return 2
-      if (k === 'expired') return 3
-      if (k === 'cancelled' || k === 'rejected') return 9
-      return 5
-    }
-
-    const sorter = (a, b) => {
-      const pa = statusPriority(a._status)
-      const pb = statusPriority(b._status)
-      if (pa !== pb) return pa - pb
-      const ta = a._startTime?.getTime?.() || 0
-      const tb = b._startTime?.getTime?.() || 0
-      return ta - tb
-    }
-
-    const waitingToday = rows
-      .filter((r) => r._status === 'hold' && r._isHoldActive && formatISODate(r._startTime) === todayIso)
-      .slice()
-      .sort((a, b) => (a._startTime - b._startTime))
-
-    const waitingUpcoming = rows
-      .filter((r) => r._status === 'hold' && r._isHoldActive && formatISODate(r._startTime) !== todayIso && r._startTime > new Date())
-      .slice()
-      .sort((a, b) => (a._startTime - b._startTime))
-    const today = rows.filter((r) => r._status !== 'hold' && formatISODate(r._startTime) === todayIso).slice().sort(sorter)
-    const upcoming = rows.filter((r) => r._status !== 'hold' && formatISODate(r._startTime) !== todayIso && r._startTime > new Date()).slice().sort(sorter)
-    const yday = rows.filter((r) => r._status !== 'hold' && formatISODate(r._startTime) === yesterdayIso).slice().sort(sorter)
-    const older = rows.filter((r) => r._status !== 'hold' && r._startTime < new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate())).slice().sort(sorter)
-
-    return { waitingToday, waitingUpcoming, today, upcoming, yday, older }
+    return groupMyReservations({ myReservationRows })
   }, [myReservationRows])
 
   async function createReservation() {
     setError('')
     if (!selectedTableId) {
       setError('Please select a table')
+      showErrorAlert('Please select a table')
       return
     }
 
@@ -403,39 +315,19 @@ export default function ReservationPage() {
       showErrorAlert('You already have a pending reservation. Please wait for confirmation or cancel it.')
       return
     }
-    // Nếu chưa đăng nhập: chuyển sang trang login
-    if (!user?.uid) {
-      // Save current form draft to restore after login
-      try {
-        const draft = {
-          selectedTableId,
-          isoDate,
-          startMinutes,
-          endMinutes,
-          partySize,
-          customerName,
-          customerEmail,
-          customerPhone,
-        }
-        sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
-      } catch {}
-      showErrorAlert('Vui lòng đăng nhập để đặt bàn')
-      navigate('/auth/login', { replace: false, state: { from: location } })
-      return
-    }
-
     if (!selectedTable) {
       setError('Selected table not found')
+      showErrorAlert('Selected table not found')
       return
     }
 
     if (String(selectedTable.status || 'available').toLowerCase() === 'occupied') {
       setError('Selected table is occupied')
+      showErrorAlert('Selected table is occupied')
       return
     }
     if (reservedTableIdsForSelectedRange.has(selectedTable.id)) {
       setError('This table is not available for the selected time')
-      try { toast.error('Selected table is unavailable') } catch {}
       return
     }
 
@@ -451,14 +343,17 @@ export default function ReservationPage() {
     const dur = Number(derivedDurationMinutes)
     if (!Number.isFinite(dur) || dur <= 0) {
       setError('Invalid time range')
+      showErrorAlert('Invalid time range')
       return
     }
     if (dur % TIMELINE_CONFIG.stepMinutes !== 0) {
       setError('Time must be in 30-minute blocks')
+      showErrorAlert('Time must be in 30-minute blocks')
       return
     }
     if (dur > TIMELINE_CONFIG.maxDurationMinutes) {
       setError('Duration exceeds max (6h)')
+      showErrorAlert('Duration exceeds max (6h)')
       return
     }
 
@@ -466,18 +361,23 @@ export default function ReservationPage() {
     const party = Number(partySize)
     if (!Number.isFinite(party) || party < 1) {
       setError('Party size must be at least 1')
+      showErrorAlert('Party size must be at least 1')
       return
     }
     if (Number.isFinite(seats) && Number.isFinite(party) && party > seats + 1) {
       setError('Party size exceeds max allowed (seats + 1)')
+      showErrorAlert('Party size exceeds max allowed (seats + 1)')
       return
     }
 
     setSubmitting(true)
     try {
-      const reservationId = await createHoldReservation({
-        db,
-        user,
+      const bookingUser = !user?.uid || user?.isAnonymous
+        ? await useCases.ensureBookingUser.execute({ displayName: customerNameValue })
+        : user
+
+      const reservationId = await useCases.createHoldReservation.execute({
+        user: bookingUser,
         table: selectedTable,
         isoDate,
         startMinutes,
@@ -498,7 +398,9 @@ export default function ReservationPage() {
         setSelectedTableId('')
       }
     } catch (e) {
-      setError(e?.message || 'Failed to create reservation')
+      const msg = e?.message || 'Failed to create reservation'
+      setError(msg)
+      showErrorAlert(msg)
     } finally {
       setSubmitting(false)
     }
@@ -507,9 +409,13 @@ export default function ReservationPage() {
   async function onCancelReservation(reservationId, tableId, slotKeys) {
     setError('')
     try {
-      await cancelReservation({ db, reservationId, tableId, slotKeys })
+      await useCases.cancelHoldReservation.execute({
+        reservation: { id: reservationId, tableId, slotKeys },
+      })
     } catch (e) {
-      setError(e?.message || 'Failed to cancel reservation')
+      const msg = e?.message || 'Failed to cancel reservation'
+      setError(msg)
+      showErrorAlert(msg)
     }
   }
 
@@ -527,12 +433,7 @@ export default function ReservationPage() {
     if (!editingReservation) return
     setError('')
     try {
-      await cancelReservation({
-        db,
-        reservationId: editingReservation.id,
-        tableId: editingReservation.tableId,
-        slotKeys: editingReservation.slotKeys,
-      })
+      await useCases.cancelHoldReservation.execute({ reservation: editingReservation })
 
       const updatedTable = tables.find((t) => t.id === editingReservation.tableId)
       if (!updatedTable) {
@@ -541,9 +442,12 @@ export default function ReservationPage() {
       }
 
       const resIsoDate = editingReservation.isoDate || formatISODate(toDate(editingReservation.startTime))
-      const newResId = await createHoldReservation({
-        db,
-        user,
+      const bookingUser = !user?.uid || user?.isAnonymous
+        ? await useCases.ensureBookingUser.execute({ displayName: editingReservation.customerName })
+        : user
+
+      const newResId = await useCases.createHoldReservation.execute({
+        user: bookingUser,
         table: updatedTable,
         isoDate: resIsoDate,
         startMinutes: editingReservation.startMinutes,
@@ -559,7 +463,9 @@ export default function ReservationPage() {
         closeEditDialog()
       }
     } catch (e) {
-      setError(e?.message || 'Failed to update reservation')
+      const msg = e?.message || 'Failed to update reservation'
+      setError(msg)
+      showErrorAlert(msg)
     }
   }
 
@@ -700,6 +606,12 @@ export default function ReservationPage() {
           </div>
         </div>
 
+        {error ? (
+          <div className="error" style={{ marginTop: 12 }}>
+            {error}
+          </div>
+        ) : null}
+
         {isSelectedTableUnavailable ? (
           <div className="error" style={{ marginTop: 12 }}>
             This table is not available for the selected time.
@@ -726,10 +638,10 @@ export default function ReservationPage() {
       <div className="card">
         <h3 style={{ marginTop: 0 }}>My reservations</h3>
         <div className="stack">
-          {!user || user?.isAnonymous ? <div className="muted">Sign in (not as a guest) to see your reservation history on this device.</div> : null}
-          {user && !user.isAnonymous && myReservations.length === 0 ? <div className="muted">No reservations yet.</div> : null}
+          {!user?.uid ? <div className="muted">Make a reservation to see it here.</div> : null}
+          {user?.uid && myReservations.length === 0 ? <div className="muted">No reservations yet.</div> : null}
 
-          {user && !user.isAnonymous ? (
+          {user?.uid ? (
             <>
               {groupedMyReservations.waitingToday.length > 0 ? (
                 <>

@@ -1,19 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
-import { onAuthStateChanged } from 'firebase/auth'
-import { auth } from '../../../shared/firebase'
-import {
-  getAdminUsers,
-  getCustomerUsers,
-  getUserById,
-  toggleUserStatus,
-  deleteUserProfile,
-  USER_STATUS,
-  USER_ROLES,
-} from '../../../shared/services/users'
+import { useAuth } from '../../auth/useAuth'
+import { useServices } from '../../../app/ServiceContext'
+import { USER_ROLES, USER_STATUS } from '../../../modules/users/domain/userConstants'
 import './AdminAccountsPage.css'
 
 export default function AdminAccountsPage() {
-  const [currentUser, setCurrentUser] = useState(null)
+  const { user: currentUser, loading: authLoading } = useAuth()
+  const { useCases } = useServices()
   const [currentUserRole, setCurrentUserRole] = useState('')
   const [activeTab, setActiveTab] = useState('customer') // 'admin' or 'customer'
   const [adminUsers, setAdminUsers] = useState([])
@@ -29,13 +22,13 @@ export default function AdminAccountsPage() {
 
       if (currentUserRole === USER_ROLES.SYSTEM_ADMIN) {
         const [admins, customers] = await Promise.all([
-          getAdminUsers(),
-          getCustomerUsers(),
+          useCases.listAdminUsers.execute(),
+          useCases.listCustomerUsers.execute(),
         ])
         setAdminUsers(admins)
         setCustomerUsers(customers)
       } else if (currentUserRole === USER_ROLES.ADMIN) {
-        const customers = await getCustomerUsers()
+        const customers = await useCases.listCustomerUsers.execute()
         setCustomerUsers(customers)
         setAdminUsers([])
       }
@@ -44,23 +37,28 @@ export default function AdminAccountsPage() {
     } finally {
       setLoading(false)
     }
-  }, [currentUserRole])
+  }, [currentUserRole, useCases.listAdminUsers, useCases.listCustomerUsers])
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        setCurrentUser(user)
-        // Get user role from Firestore
-        const userDoc = await getUserById(user.uid)
-        setCurrentUserRole(userDoc?.role || '')
-      } else {
-        setCurrentUser(null)
-        setCurrentUserRole('')
-      }
-    })
+    let cancelled = false
 
-    return unsub
-  }, [])
+    async function loadRole() {
+      if (authLoading) return
+      if (!currentUser?.uid) {
+        if (!cancelled) setCurrentUserRole('')
+        return
+      }
+      try {
+        const userDoc = await useCases.getUserById.execute({ userId: currentUser.uid })
+        if (!cancelled) setCurrentUserRole(userDoc?.role || '')
+      } catch {
+        if (!cancelled) setCurrentUserRole('')
+      }
+    }
+
+    loadRole()
+    return () => { cancelled = true }
+  }, [authLoading, currentUser?.uid, useCases.getUserById])
 
   useEffect(() => {
     if (currentUserRole) {
@@ -76,7 +74,7 @@ export default function AdminAccountsPage() {
     }
     try {
       setProcessingId(userId)
-      await toggleUserStatus(userId)
+      await useCases.toggleUserStatus.execute({ userId })
       await loadUsers() // Reload to get updated status
     } catch (err) {
       setError(err.message)
@@ -95,7 +93,7 @@ export default function AdminAccountsPage() {
 
     try {
       setProcessingId(userId)
-      await deleteUserProfile(userId)
+      await useCases.deleteUser.execute({ userId })
       await loadUsers()
     } catch (err) {
       setError(err.message)

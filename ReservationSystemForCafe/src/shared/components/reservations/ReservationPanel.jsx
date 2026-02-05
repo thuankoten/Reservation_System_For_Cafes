@@ -54,6 +54,13 @@ export default function ReservationPanel({
               </div>
             ) : null}
 
+            {statusLabel ? (
+              <div className="kv__row">
+                <div className="kv__k">Status</div>
+                <div className="kv__v">{statusLabel}</div>
+              </div>
+            ) : null}
+
             {/* {statusLabel ? (
               <div className="kv__row">
                 <div className="kv__k">Status</div>

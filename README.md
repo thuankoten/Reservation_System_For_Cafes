@@ -1,39 +1,83 @@
-[README.md](https://github.com/user-attachments/files/24867427/README.md)
 # Reservation System For Cafes
 
-Ứng dụng web quản lý/đặt chỗ cho quán cà phê, xây dựng với React (Vite) và Firebase (Firestore/Auth). Dự án bao gồm dashboard khách hàng và admin dashboard (quản trị bàn) với giao diện sidebar trái.
+Ứng dụng web **quản lý/đặt bàn cho quán cà phê** với 2 khu vực:
 
-## Giới thiệu dự án
+- **Customer Dashboard**: xem bàn, đặt chỗ theo timeline, quản lý đặt chỗ cá nhân
+- **Admin Dashboard**: quản trị bàn, duyệt/huỷ/điều phối đặt chỗ, quản lý tài khoản
 
-Dự án nhằm cung cấp một hệ thống đặt chỗ/quan sát tình trạng bàn theo thời gian thực cho quán cà phê.
+Tech stack: **React (Vite)** + **Firebase (Firestore/Auth/Storage)**.
 
-- **Customer Dashboard**: Overview, Tables, Reservations, Menu, Chat, Report
-- **Admin Dashboard**: Quản trị `tables`
+---
 
-## Prerequisites
+## Tính năng chính
 
-- Node.js (khuyến nghị: Node 18+)
-- npm (đi kèm Node.js)
-- Firebase project (Firestore + tuỳ chọn Firebase Auth)
+### Customer
 
-## Cách cài đặt
+- Đặt bàn theo ngày/khung giờ (block 30 phút)
+- Thấy bàn khả dụng theo **time range** (không chỉ theo trạng thái cả ngày)
+- **Guest booking**: khách chưa đăng nhập vẫn có thể đặt bàn (đăng nhập anonymous)
+- Quản lý các đặt chỗ của mình (pending/confirmed/older…)
 
-### 1) Clone project
+### Admin
+
+- Quản lý bàn (`tables`): tạo/sửa/xoá, phân tầng (`floors`), check-in/out thủ công
+- Quản lý đặt chỗ (`reservations`): duyệt/từ chối/huỷ, tự động expire các reservation quá hạn
+- Quản lý người dùng (`users`): bật/tắt trạng thái, xoá profile
+
+---
+
+## Công nghệ sử dụng
+
+- **React 19**
+- **Vite**
+- **React Router**
+- **Firebase**: Firestore, Auth, Storage
+- **ESLint**
+
+---
+
+## Kiến trúc (SOLID / Layered)
+
+Dự án đã được refactor theo hướng module hoá:
+
+- `src/modules/*`
+  - `domain/`: policy, constants (pure)
+  - `application/`: use cases, presenters, query hooks
+  - `infrastructure/`: Firestore repositories, Firebase gateways
+- `src/app/ServiceContainer.jsx`: Dependency Injection container (repos/useCases)
+- `src/features/*`: UI pages/components
+
+Mục tiêu:
+
+- Pages không import trực tiếp Firestore/Auth
+- Business rules nằm trong use case / policy / presenter
+
+---
+
+## Yêu cầu
+
+- Node.js **18+**
+- npm
+- Một Firebase project đã bật:
+  - Firestore
+  - Firebase Auth (khuyến nghị)
+
+---
+
+## Cài đặt & Chạy dự án
+
+Lưu ý: source app nằm trong thư mục con `ReservationSystemForCafe/`.
+
+### 1) Cài dependencies
 
 ```bash
-git clone <your-repo-url>
 cd ReservationSystemForCafe
-```
-
-### 2) Cài dependencies
-
-```bash
 npm install
 ```
 
-### 3) Cấu hình Firebase
+### 2) Cấu hình Firebase (Vite env)
 
-Tạo file `.env.local` ở root project:
+Tạo file `ReservationSystemForCafe/.env.local`:
 
 ```bash
 VITE_FIREBASE_API_KEY=...
@@ -44,9 +88,9 @@ VITE_FIREBASE_MESSAGING_SENDER_ID=...
 VITE_FIREBASE_APP_ID=...
 ```
 
-Sau đó khởi động lại dev server.
+Firebase được khởi tạo tại `ReservationSystemForCafe/src/shared/firebase/index.js`.
 
-### 4) Chạy dự án
+### 3) Run dev server
 
 ```bash
 npm run dev
@@ -54,65 +98,90 @@ npm run dev
 
 Mặc định: http://localhost:5173
 
-## Cách sử dụng (Usage)
+---
 
-### Customer Dashboard
+## Scripts
+
+Chạy trong thư mục `ReservationSystemForCafe/`:
+
+- `npm run dev`: chạy dev server
+- `npm run build`: build production
+- `npm run preview`: preview bản build
+- `npm run lint`: chạy ESLint
+
+---
+
+## Routing nhanh
+
+### Customer
 
 - `/dashboard/overview`
 - `/dashboard/tables`
 - `/dashboard/reservations`
 
-Trang **Tables** hỗ trợ:
-
-- Tabs: `Table Map`, `Table by Customer`, `TimeLine`
-- Filter: `All`, `Free`, `Reserved`, `Occupied`
-- Nút **Seed demo tables** để tạo dữ liệu mẫu `tables` (T01..T20) (cần Firestore rules cho phép write)
-
-### Admin Dashboard
+### Admin
 
 - `/admin/dashboard`
 - `/admin/dashboard/tables`
+- `/admin/dashboard/reservations`
+- `/admin/dashboard/accounts`
 
-Trang **Admin • Tables** hỗ trợ:
+---
 
-- Thêm bàn mới
-- Sửa `number`, `seats`, `status`
-- Xoá bàn
+## Firestore Data Model (tóm tắt)
 
-## Database (Firestore)
+### `tables`
 
-### Collection: `tables`
+- `number`: số bàn
+- `seats`: số ghế
+- `status`: `available | reserved | occupied`
 
-Mỗi document trong `tables` có các field:
+Sub-collection:
 
-- `number` (number)
-- `seats` (number)
-- `status` (string: `available | reserved | occupied`)
-- `updatedAt` (Firestore timestamp)
+- `tables/{tableId}/slots/{slotId}`: khoá các time slots theo reservation (dùng để check trùng lịch)
 
-## Firestore Rules (lưu ý)
+### `reservations`
 
-Nếu bạn gặp lỗi `Missing or insufficient permissions`, nguyên nhân thường do Firestore Rules đang chặn.
+- `userId`, `userEmail`, `isAnonymous`
+- `tableId`, `tableNumber`, `partySize`
+- `startTime`, `endTime`, `durationMinutes`
+- `status`: `hold | confirmed | cancelled | rejected | expired | ...`
+- `holdExpiresAt`
+- `slotKeys`: danh sách slot keys đã lock
 
-Để test nhanh (DEV ONLY), bạn có thể tạm thời mở rule:
+### `users`
 
-```js
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
-    }
-  }
-}
-```
+- `role`: `customer | admin | system-admin`
+- `status`: `active | disabled`
 
-## Scripts
+---
 
-- `npm run dev`: chạy dev server
-- `npm run build`: build production
-- `npm run preview`: preview production build
-- `npm run lint`: chạy ESLint
+## Firestore Rules
+
+File rules tham khảo/đang dùng: `ReservationSystemForCafe/firestore.rules`.
+
+Nếu gặp lỗi `Missing or insufficient permissions`:
+
+- **Kiểm tra Firestore rules**
+- **Kiểm tra user role** trong document `users/{uid}` (admin/system-admin)
+
+---
+
+## Troubleshooting
+
+### Missing Firebase env
+
+Nếu app báo lỗi thiếu Firebase config, kiểm tra:
+
+- `ReservationSystemForCafe/.env.local`
+- Restart dev server sau khi sửa env
+
+### Không đặt bàn được
+
+- Đảm bảo đã nhập các trường bắt buộc (ví dụ: Phone)
+- Kiểm tra Firestore rules cho phép tạo `reservations` và `slots`
+
+---
 
 ## Contributors
 
@@ -121,11 +190,13 @@ service cloud.firestore {
 - NhuPhuc301
 - GiaMinhh39
 
-## Thông tin liên lạc
+## Liên hệ
 
 - thuantt1708@ut.edu.com
 - thuankhung2k5@gmail.com
+- hongocvy05@gmail.com
+- nhuphuc301@gmail.com
 
-## Bản quyền
+## License
 
-Hiện chưa có bản quyền
+Chưa khai báo license.

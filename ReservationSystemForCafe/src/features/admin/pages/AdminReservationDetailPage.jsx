@@ -1,30 +1,16 @@
 import { useParams, useNavigate } from 'react-router-dom'
-import { doc, getDoc } from 'firebase/firestore'
-import { useEffect, useState } from 'react'
-import { db } from '../../../shared/firebase'
+import { useState } from 'react'
 import StatusBadge from '../../../shared/components/StatusBadge'
 import './AdminReservationDetailPage.css'
-import { checkInReservationAction as adminCheckIn, checkOutTableAction as adminCheckOut } from '../../../shared/services/admin/reservations'
+import { useReservationDetailQuery } from '../../../modules/reservations/application/queries/useReservationDetailQuery'
+import { useServices } from '../../../app/ServiceContext'
 
 export default function AdminReservationDetailPage() {
   const { reservationId } = useParams()
   const navigate = useNavigate()
-  const [r, setR] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const { useCases } = useServices()
+  const { reservation: r, loading } = useReservationDetailQuery({ reservationId })
   const [error, setError] = useState('')
-
-  useEffect(() => {
-    async function load() {
-      const snap = await getDoc(
-        doc(db, 'reservations', reservationId)
-      )
-      if (snap.exists()) {
-        setR({ id: snap.id, ...snap.data() })
-      }
-      setLoading(false)
-    }
-    load()
-  }, [reservationId])
 
   if (loading) return <div>Loading...</div>
   if (!r) return <div>Reservation not found</div>
@@ -47,9 +33,7 @@ export default function AdminReservationDetailPage() {
   async function handleCheckIn() {
     setError('')
     try {
-      await adminCheckIn({ db, reservationId: r.id, tableId: r.tableId })
-      const snap = await getDoc(doc(db, 'reservations', reservationId))
-      if (snap.exists()) setR({ id: snap.id, ...snap.data() })
+      await useCases.checkInReservation.execute({ reservation: r })
     } catch (e) {
       setError(e?.message || 'Failed to check in')
     }
@@ -58,9 +42,7 @@ export default function AdminReservationDetailPage() {
   async function handleCheckOut() {
     setError('')
     try {
-      await adminCheckOut({ db, tableId: r.tableId, reservationId: r.id, keepReserved: false })
-      const snap = await getDoc(doc(db, 'reservations', reservationId))
-      if (snap.exists()) setR({ id: snap.id, ...snap.data() })
+      await useCases.checkOutReservation.execute({ reservation: r, keepReserved: false })
     } catch (e) {
       setError(e?.message || 'Failed to check out')
     }

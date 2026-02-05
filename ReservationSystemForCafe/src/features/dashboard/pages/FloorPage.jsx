@@ -1,18 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
-import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore'
 import { useNavigate } from 'react-router-dom'
-import { db } from '../../../shared/firebase'
 import { useAuth } from '../../auth/useAuth'
 import { formatISODate } from '../../../shared/utils/timeline'
 import TableMap from '../../../shared/components/tables/TableMap'
 import ReservationPanel from '../../../shared/components/reservations/ReservationPanel'
 import { showErrorAlert } from '../../../shared/utils/errorAlert'
+import { useTablesQuery } from '../../../modules/tables/application/queries/useTablesQuery'
+import { useReservationsQuery } from '../../../modules/reservations/application/queries/useReservationsQuery'
 
 export default function FloorPage() {
   useAuth()
   const navigate = useNavigate()
-  const [tables, setTables] = useState([])
-  const [activeView, setActiveView] = useState('map')
+  const { rows: tables, error: tablesError } = useTablesQuery()
+  const { rows: reservations, error: reservationsError } = useReservationsQuery()
   const [activeStatus, setActiveStatus] = useState('all')
   const [activeFloor, setActiveFloor] = useState(1)
   const [selectedTableId, setSelectedTableId] = useState('')
@@ -22,41 +22,15 @@ export default function FloorPage() {
   const [imageViewerSrc, setImageViewerSrc] = useState('')
   const [imageViewerZoom, setImageViewerZoom] = useState(1)
   const [imageThumbErrorByTableId, setImageThumbErrorByTableId] = useState(() => new Map())
-  const [reservations, setReservations] = useState([])
   const asideRef = useRef(null)
 
   useEffect(() => {
-    const qTables = query(collection(db, 'tables'), orderBy('number', 'asc'))
-    const unsub = onSnapshot(
-      qTables,
-      (snap) => {
-        setTables(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
-      },
-      (e) => {
-        const msg = e?.message || 'Failed to load tables'
-        showErrorAlert(msg)
-      }
-    )
-
-    return () => unsub()
-  }, [])
+    if (tablesError) showErrorAlert(tablesError)
+  }, [tablesError])
 
   useEffect(() => {
-    const q = query(collection(db, 'reservations'), orderBy('createdAt', 'desc'), limit(100))
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-        setReservations(rows)
-      },
-      (e) => {
-        const msg = e?.message || 'Failed to load reservations'
-        showErrorAlert(msg)
-      }
-    )
-
-    return () => unsub()
-  }, [])
+    if (reservationsError) showErrorAlert(reservationsError)
+  }, [reservationsError])
 
   const normalizedStatus = (s) => {
     const v = String(s || '').trim().toLowerCase()
@@ -149,7 +123,6 @@ export default function FloorPage() {
 
   const panelTableId = detailsTableId
   const selectedTable = panelTableId ? tables.find((t) => t.id === panelTableId) || null : null
-  const selectedReservation = null
 
   const selectedTableImageError = panelTableId ? imageThumbErrorByTableId.get(panelTableId) || false : false
 
@@ -183,34 +156,32 @@ export default function FloorPage() {
   }
 
   return (
-    <div className={activeView === 'map' ? 'card tablesCard tablesCard--map' : 'card'}>
+    <div className={'card tablesCard tablesCard--map'}>
       <div className="tablesTop">
         <div className="tablesTop__meta">
           <h2 className="pageTitle">Table map in Café</h2>
         </div>
       </div>
 
-      {(activeView === 'map' || activeView === 'timeline') ? (
-        <div className="floorSelectorRow" role="navigation" aria-label="Floor selector">
-          {[1, 2, 3].map((id) => {
-            const label = id === 1 ? '1st Floor' : id === 2 ? '2nd Floor' : '3rd Floor'
-            const isActive = activeFloor === id
-            return (
-              <button
-                key={id}
-                type="button"
-                className={`tabBtn ${isActive ? 'tabBtn--active' : ''}`}
-                onClick={() => {
-                  setSelectedTableId('')
-                  setActiveFloor(id)
-                }}
-              >
-                {label}
-              </button>
-            )
-          })}
-        </div>
-      ) : null}
+      <div className="floorSelectorRow" role="navigation" aria-label="Floor selector">
+        {[1, 2, 3].map((id) => {
+          const label = id === 1 ? '1st Floor' : id === 2 ? '2nd Floor' : '3rd Floor'
+          const isActive = activeFloor === id
+          return (
+            <button
+              key={id}
+              type="button"
+              className={`tabBtn ${isActive ? 'tabBtn--active' : ''}`}
+              onClick={() => {
+                setSelectedTableId('')
+                setActiveFloor(id)
+              }}
+            >
+              {label}
+            </button>
+          )
+        })}
+      </div>
 
       <div className="tablesFilters" aria-label="Tables status filter">
         <button
@@ -243,23 +214,22 @@ export default function FloorPage() {
         </button>
       </div>
 
-      <div className={activeView === 'map' ? 'floorLayoutWrap' : 'grid'}>
-        {activeView === 'map' ? (
-          <div className="floorLayout">
-            <TableMap
-              tables={mapTables}
-              selectedTableId={selectedTableId}
-              normalizedStatus={normalizedStatus}
-              statusSymbol={statusSymbol}
-              onBackgroundClick={() => closeDetails()}
-              onTableClick={(t) => {
-                if (selectedTableId === t.id) {
-                  closeDetails()
-                  return
-                }
-                openDetails(t.id)
-              }}
-            />
+      <div className={'floorLayoutWrap'}>
+        <div className="floorLayout">
+          <TableMap
+            tables={mapTables}
+            selectedTableId={selectedTableId}
+            normalizedStatus={normalizedStatus}
+            statusSymbol={statusSymbol}
+            onBackgroundClick={() => closeDetails()}
+            onTableClick={(t) => {
+              if (selectedTableId === t.id) {
+                closeDetails()
+                return
+              }
+              openDetails(t.id)
+            }}
+          />
 
             {panelTableId ? (
               <aside
@@ -382,8 +352,7 @@ export default function FloorPage() {
                 />
               </aside>
             ) : null}
-          </div>
-        ) : null}
+        </div>
 
         {imageViewerOpen && imageViewerSrc ? (
           <div

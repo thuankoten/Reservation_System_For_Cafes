@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from './useAuth'
 import { Navigate, useLocation } from 'react-router-dom'
-import { getUserById } from '../../shared/services/users'
+import { useServices } from '../../app/ServiceContext'
 
 export default function RequireAuth({ children, allowedRoles = [] }) {
   const { user, loading } = useAuth()
+  const { useCases } = useServices()
   const location = useLocation()
   const [checking, setChecking] = useState(true)
   const [allowed, setAllowed] = useState(false)
@@ -30,7 +31,7 @@ export default function RequireAuth({ children, allowedRoles = [] }) {
       }
 
       try {
-        const doc = await getUserById(user.uid)
+        const doc = await useCases.getUserById.execute({ userId: user.uid })
         const role = doc?.role
         const ok = role && allowedRoles.includes(role)
         if (!cancelled) setAllowed(Boolean(ok))
@@ -46,7 +47,7 @@ export default function RequireAuth({ children, allowedRoles = [] }) {
 
     check()
     return () => { cancelled = true }
-  }, [user, loading, allowedRoles])
+  }, [user, loading, allowedRoles, useCases.getUserById])
 
   if (loading || checking) return <div style={{ padding: 16 }}>Loading...</div>
 
