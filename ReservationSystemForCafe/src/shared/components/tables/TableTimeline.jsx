@@ -108,7 +108,6 @@ export default function TableTimeline({ tables, reservations, isoDate, onChangeI
         />
         <div className="ganttLegend" aria-label="Timeline status legend" style={{ marginLeft: 12 }}>
           <div className="ganttLegend__item"><span className="ganttLegend__swatch swatch--confirmed" />Confirmed</div>
-          <div className="ganttLegend__item"><span className="ganttLegend__swatch swatch--hold" />Pending (Hold)</div>
           <div className="ganttLegend__item"><span className="ganttLegend__swatch swatch--occupied" />Occupied</div>
           <div className="ganttLegend__item"><span className="ganttLegend__swatch swatch--completed" />Completed</div>
           <div className="ganttLegend__item"><span className="ganttLegend__swatch swatch--expired" />Expired</div>
@@ -175,6 +174,7 @@ export default function TableTimeline({ tables, reservations, isoDate, onChangeI
                     const left = safeStart * cellWidthPx
                     const width = Math.max(cellWidthPx, (safeEnd - safeStart) * cellWidthPx)
                     const baseStatus = String(r._status || '').toLowerCase()
+                    if (baseStatus === 'hold') return null
                     const kind = baseStatus === 'hold'
                       ? 'hold'
                       : baseStatus === 'occupied'

@@ -25,7 +25,8 @@ export class FirebaseAuthGateway {
     const u = this.auth.currentUser
     if (!u) throw new Error('Failed to sign in')
 
-    if (name && !u.displayName) {
+    const currentName = String(u.displayName || '').trim()
+    if (name && currentName !== name) {
       await updateProfile(u, { displayName: name })
     }
 

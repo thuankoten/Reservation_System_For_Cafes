@@ -62,7 +62,7 @@ function computeDefaultEndMinutes({ startMinutes, durationMinutes }) {
 }
 
 export default function ReservationPage() {
-  const { user } = useAuth()
+  const { user, refreshUser } = useAuth()
   const { useCases } = useServices()
   const navigate = useNavigate()
   const DRAFT_KEY = 'reservationDraft'
@@ -369,9 +369,12 @@ export default function ReservationPage() {
 
     setSubmitting(true)
     try {
-      const bookingUser = !user?.uid || user?.isAnonymous
+      const isGuest = !user?.uid || user?.isAnonymous
+      const bookingUser = isGuest
         ? await useCases.ensureBookingUser.execute({ displayName: customerNameValue })
         : user
+
+      if (isGuest) await refreshUser?.()
 
       const reservationId = await useCases.createHoldReservation.execute({
         user: bookingUser,
@@ -439,9 +442,12 @@ export default function ReservationPage() {
       }
 
       const resIsoDate = editingReservation.isoDate || formatISODate(toDate(editingReservation.startTime))
-      const bookingUser = !user?.uid || user?.isAnonymous
+      const isGuest = !user?.uid || user?.isAnonymous
+      const bookingUser = isGuest
         ? await useCases.ensureBookingUser.execute({ displayName: editingReservation.customerName })
         : user
+
+      if (isGuest) await refreshUser?.()
 
       const newResId = await useCases.createHoldReservation.execute({
         user: bookingUser,

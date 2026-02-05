@@ -152,7 +152,7 @@ export default function AdminTablesPage() {
         if (r._status === 'occupied') return true
         if (r._status === 'completed') return true
         if (r._status === 'expired') return true
-        if (r._status === 'hold') return r._holdExpiresAt && r._holdExpiresAt > now
+        if (r._status === 'hold') return false
         return false
       })
   }, [reservations])
@@ -590,7 +590,7 @@ export default function AdminTablesPage() {
 
                       <div className="rowCard" style={{ marginTop: 12 }}>
                         <div className="rowCard__title">Reservations today</div>
-                        <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
+                        <div style={{ marginTop: 8, display: 'grid', gap: 8, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
                           {reservationsForSelectedTableToday.length === 0 ? (
                             <div className="muted">No reservations for today.</div>
                           ) : reservationsForSelectedTableToday.map((r) => {
@@ -621,7 +621,7 @@ export default function AdminTablesPage() {
 
                       <div className="rowCard" style={{ marginTop: 12 }}>
                         <div className="rowCard__title">Other days</div>
-                        <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
+                        <div style={{ marginTop: 8, display: 'grid', gap: 8, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
                           {reservationsForSelectedTableOtherDays.length === 0 ? (
                             <div className="muted">No reservations on other days.</div>
                           ) : (

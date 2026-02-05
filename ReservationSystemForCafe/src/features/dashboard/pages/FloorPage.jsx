@@ -23,6 +23,7 @@ export default function FloorPage() {
   const [imageViewerZoom, setImageViewerZoom] = useState(1)
   const [imageThumbErrorByTableId, setImageThumbErrorByTableId] = useState(() => new Map())
   const asideRef = useRef(null)
+  const closeDetailsTimerRef = useRef(null)
 
   useEffect(() => {
     if (tablesError) showErrorAlert(tablesError)
@@ -94,14 +95,22 @@ export default function FloorPage() {
     .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
 
   function closeDetails() {
+    if (closeDetailsTimerRef.current) {
+      window.clearTimeout(closeDetailsTimerRef.current)
+      closeDetailsTimerRef.current = null
+    }
     setDetailsOpen(false)
     setSelectedTableId('')
-    window.setTimeout(() => {
+    closeDetailsTimerRef.current = window.setTimeout(() => {
       setDetailsTableId('')
     }, 220)
   }
 
   function openDetails(tableId) {
+    if (closeDetailsTimerRef.current) {
+      window.clearTimeout(closeDetailsTimerRef.current)
+      closeDetailsTimerRef.current = null
+    }
     setDetailsTableId(tableId)
     setSelectedTableId(tableId)
     setDetailsOpen(true)
@@ -275,60 +284,57 @@ export default function FloorPage() {
                     const today = new Date()
                     const now = new Date()
                     const todayIso = formatISODate(today)
-                    const sevenDaysAhead = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 7)
                     const sameTable = (r) => r.tableId === panelTableId
                     const isToday = (r) => r.startTimeDate && formatISODate(r.startTimeDate) === todayIso
-                    const isUpcomingWeek = (r) => {
-                      if (!r.startTimeDate) return false
-                      return r.startTimeDate >= today && r.startTimeDate <= sevenDaysAhead
-                    }
 
-                    const busyToday = activeReservations
+                    const reservationsToday = activeReservations
                       .filter(sameTable)
                       .filter(isToday)
                       .filter((r) => (r.endTimeDate ? r.endTimeDate >= now : r.startTimeDate >= now))
                       .slice()
                       .sort((a, b) => (a.startTimeDate?.getTime?.() || 0) - (b.startTimeDate?.getTime?.() || 0))
 
-                    const busyUpcoming = activeReservations
+                    const reservationsOtherDays = activeReservations
                       .filter(sameTable)
-                      .filter((r) => !isToday(r) && isUpcomingWeek(r))
+                      .filter((r) => !isToday(r))
                       .filter((r) => (r.endTimeDate ? r.endTimeDate >= now : r.startTimeDate >= now))
                       .slice()
                       .sort((a, b) => (a.startTimeDate?.getTime?.() || 0) - (b.startTimeDate?.getTime?.() || 0))
 
-                    if (busyToday.length === 0 && busyUpcoming.length === 0) return null
-
                     return (
-                      <div className="rowCard" style={{ marginTop: 12 }}>
-                        {busyToday.length > 0 ? (
-                          <>
-                            <div className="rowCard__title">Busy times today</div>
-                            <div className="muted" style={{ marginTop: 4 }}>You can still book other free hours.</div>
-                            <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                              {busyToday.map((r) => (
-                                <span key={`today-${r.id}`} className="badge badge--neutral">
-                                  {formatTime(r.startTimeDate)} – {formatTime(r.endTimeDate)}
-                                </span>
-                              ))}
-                            </div>
-                          </>
-                        ) : null}
+                      <>
+                        <div className="rowCard" style={{ marginTop: 12 }}>
+                          <div className="rowCard__title">Reservations today</div>
+                          <div style={{ marginTop: 8, display: 'grid', gap: 8, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+                            {reservationsToday.length === 0 ? (
+                              <div className="muted">No reservations for today.</div>
+                            ) : reservationsToday.map((r) => (
+                              <div key={`today-${r.id}`} className="rowCard" style={{ padding: 8 }}>
+                                <div style={{ minWidth: 0 }}>
+                                  <div className="rowCard__title">Reserved</div>
+                                  <div className="muted">{formatTime(r.startTimeDate)} → {formatTime(r.endTimeDate)}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
 
-                        {busyUpcoming.length > 0 ? (
-                          <>
-                            <div className="rowCard__title" style={{ marginTop: 12 }}>Upcoming busy times (7 days)</div>
-                            <div className="muted" style={{ marginTop: 4 }}>You can still book other free hours.</div>
-                            <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
-                              {busyUpcoming.map((r) => (
-                                <span key={`up-${r.id}`} className="badge badge--neutral">
-                                  {formatISODate(r.startTimeDate)} • {formatTime(r.startTimeDate)} – {formatTime(r.endTimeDate)}
-                                </span>
-                              ))}
-                            </div>
-                          </>
-                        ) : null}
-                      </div>
+                        <div className="rowCard" style={{ marginTop: 12 }}>
+                          <div className="rowCard__title">Other days</div>
+                          <div style={{ marginTop: 8, display: 'grid', gap: 8, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+                            {reservationsOtherDays.length === 0 ? (
+                              <div className="muted">No reservations on other days.</div>
+                            ) : reservationsOtherDays.map((r) => (
+                              <div key={`other-${r.id}`} className="rowCard" style={{ padding: 8 }}>
+                                <div style={{ minWidth: 0 }}>
+                                  <div className="rowCard__title">Reserved</div>
+                                  <div className="muted">{formatISODate(r.startTimeDate)} • {formatTime(r.startTimeDate)} → {formatTime(r.endTimeDate)}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </>
                     )
                   })()}
                   showImage

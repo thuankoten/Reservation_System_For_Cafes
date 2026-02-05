@@ -32,6 +32,52 @@ export default function ReservationPanel({
         <div className="reservationPanel__empty">{emptyText || 'Select a table to view details.'}</div>
       ) : (
         <div className="reservationPanel__body">
+          {showImage ? (
+            imageUrl ? (
+              imageError ? (
+                <div className="rowCard" style={{ marginBottom: 12, padding: 12 }}>
+                  <div>
+                    <div className="rowCard__title">Image failed to load</div>
+                    <div className="muted" style={{ marginTop: 4 }}>
+                      The image URL may be invalid, private, expired, or blocked by the host.
+                    </div>
+                    <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                      <a className="btn" href={imageUrl} target="_blank" rel="noreferrer">
+                        Open image
+                      </a>
+                      {onRetryImage ? (
+                        <button type="button" className="btn" onClick={onRetryImage}>
+                          Retry
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="reservationPanel__thumbBtn"
+                  onClick={() => onOpenImage?.(imageUrl)}
+                  aria-label="View table image"
+                  style={{ marginBottom: 12 }}
+                >
+                  <img
+                    className="reservationPanel__thumb"
+                    src={imageUrl}
+                    alt=""
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                    onError={() => onImageError?.()}
+                  />
+                </button>
+              )
+            ) : (
+              <div className="muted" style={{ marginBottom: 12 }}>
+                No image.
+              </div>
+            )
+          ) : null}
+
           <div className="kv">
             {'number' in table ? (
               <div className="kv__row">
@@ -77,51 +123,6 @@ export default function ReservationPanel({
           </div>
 
           {extraCard}
-
-          {showImage ? (
-            imageUrl ? (
-              imageError ? (
-                <div className="rowCard" style={{ marginTop: 12, padding: 12 }}>
-                  <div>
-                    <div className="rowCard__title">Image failed to load</div>
-                    <div className="muted" style={{ marginTop: 4 }}>
-                      The image URL may be invalid, private, expired, or blocked by the host.
-                    </div>
-                    <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                      <a className="btn" href={imageUrl} target="_blank" rel="noreferrer">
-                        Open image
-                      </a>
-                      {onRetryImage ? (
-                        <button type="button" className="btn" onClick={onRetryImage}>
-                          Retry
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  className="reservationPanel__thumbBtn"
-                  onClick={() => onOpenImage?.(imageUrl)}
-                  aria-label="View table image"
-                >
-                  <img
-                    className="reservationPanel__thumb"
-                    src={imageUrl}
-                    alt=""
-                    loading="lazy"
-                    referrerPolicy="no-referrer"
-                    onError={() => onImageError?.()}
-                  />
-                </button>
-              )
-            ) : (
-              <div className="muted" style={{ marginTop: 12 }}>
-                No image.
-              </div>
-            )
-          ) : null}
         </div>
       )}
     </section>
